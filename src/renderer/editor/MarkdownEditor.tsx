@@ -1,4 +1,4 @@
-import { useEffect, useRef, useCallback } from 'react';
+import { useEffect, useRef, useCallback, forwardRef, useImperativeHandle } from 'react';
 import { EditorView, keymap, highlightActiveLine, drawSelection, gutter, GutterMarker } from '@codemirror/view';
 import { EditorState, Compartment, Extension } from '@codemirror/state';
 import { defaultKeymap, history, historyKeymap, indentWithTab } from '@codemirror/commands';
@@ -8,6 +8,13 @@ import { vim, Vim } from '@replit/codemirror-vim';
 import { livePreviewPlugin, livePreviewBlockField, livePreviewConfig } from './livePreview';
 import { wikilinkAutocomplete, autocompleteConfig } from './linkAutocomplete';
 import type { NoteDocument, VimKeybinding } from '../../../shared/ipc';
+import { extractHeadings } from '../../../shared/linking';
+
+// ─── Handle (for parent to call focus()) ─────────────────────────────────────
+
+export interface MarkdownEditorHandle {
+  focus(): void;
+}
 
 // ─── Props ────────────────────────────────────────────────────────────────────
 
@@ -187,8 +194,11 @@ function registerAppVimCommands(): void {
 // ─── Relative line numbers ────────────────────────────────────────────────────
 
 class RelLineNumberMarker extends GutterMarker {
-  constructor(readonly label: string, readonly isCurrent: boolean) { super(); }
-  get elementClass() { return this.isCurrent ? 'cm-rln-current' : ''; }
+  elementClass: string;
+  constructor(readonly label: string, readonly isCurrent: boolean) {
+    super();
+    this.elementClass = isCurrent ? 'cm-rln-current' : '';
+  }
   toDOM() { return document.createTextNode(this.label); }
   eq(other: RelLineNumberMarker) {
     return this.label === other.label && this.isCurrent === other.isCurrent;
@@ -224,7 +234,7 @@ const BASE_EXTENSIONS: Extension[] = [
 
 // ─── Component ────────────────────────────────────────────────────────────────
 
-export default function MarkdownEditor({
+const MarkdownEditor = forwardRef<MarkdownEditorHandle, MarkdownEditorProps>(function MarkdownEditor({
   doc,
   editorMode,
   vimMode,
@@ -239,22 +249,28 @@ export default function MarkdownEditor({
   onSave,
   onChange,
   onLinkClick,
-  onHeadingsChange: _onHeadingsChange,
+  onHeadingsChange,
   onCursorChange,
-}: MarkdownEditorProps) {
+}: MarkdownEditorProps, ref) {
   const containerRef  = useRef<HTMLDivElement>(null);
   const viewRef       = useRef<EditorView | null>(null);
-  const pathRef       = useRef(doc.path);
-  const onSaveRef     = useRef(onSave);
-  const onChangeRef   = useRef(onChange);
-  const onLinkClickRef = useRef(onLinkClick);
-  const onCursorChangeRef = useRef(onCursorChange);
+
+  useImperativeHandle(ref, () => ({
+    focus: () => viewRef.current?.focus(),
+  }));
+  const pathRef             = useRef(doc.path);
+  const onSaveRef           = useRef(onSave);
+  const onChangeRef         = useRef(onChange);
+  const onLinkClickRef      = useRef(onLinkClick);
+  const onCursorChangeRef   = useRef(onCursorChange);
+  const onHeadingsChangeRef = useRef(onHeadingsChange);
 
   // Keep refs current
   useEffect(() => { onSaveRef.current = onSave; });
   useEffect(() => { onChangeRef.current = onChange; });
   useEffect(() => { onLinkClickRef.current = onLinkClick; });
   useEffect(() => { onCursorChangeRef.current = onCursorChange; });
+  useEffect(() => { onHeadingsChangeRef.current = onHeadingsChange; });
 
   // ── Create editor on mount ─────────────────────────────────────────────────
   useEffect(() => {
@@ -264,6 +280,7 @@ export default function MarkdownEditor({
       if (update.docChanged) {
         const raw = update.state.doc.toString();
         onChangeRef.current(raw);
+        onHeadingsChangeRef.current(extractHeadings(raw));
       }
       if (update.selectionSet) {
         onCursorChangeRef.current?.(update.state.selection.main.head);
@@ -420,4 +437,6 @@ export default function MarkdownEditor({
       }}
     />
   );
-}
+});
+
+export default MarkdownEditor;

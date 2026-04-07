@@ -109,7 +109,7 @@ function buildBlockDecorations(state: EditorState): DecorationSet {
     }
 
     // ── Horizontal rule: ---, ***, or ___ (3+, optional spaces between)
-    if (/^(\s*)([-*_])\s*\2\s*\2[\s\2]*$/.test(line.text) && line.text.trim().length >= 3) {
+    if (/^(\s*)([-*_])(\s*\2){2,}\s*$/.test(line.text)) {
       const hasCursor = cursorLineNo === line.number;
       if (!hasCursor) {
         items.push({ from: line.from, to: line.from,
@@ -175,7 +175,7 @@ export const livePreviewBlockField = StateField.define<DecorationSet>({
     // tr.selectionSet may not be set by all Vim-mode movements; also compare
     // cursor positions directly so we never miss a cursor change.
     const cursorMoved = tr.state.selection.main.head !== tr.startState.selection.main.head;
-    if (tr.docChanged || tr.selectionSet || cursorMoved) return buildBlockDecorations(tr.state);
+    if (tr.docChanged || cursorMoved) return buildBlockDecorations(tr.state);
     return value;
   },
   provide: f => EditorView.decorations.from(f),

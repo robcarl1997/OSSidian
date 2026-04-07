@@ -18,7 +18,7 @@ import TabBar from './components/TabBar';
 import FileTree from './components/FileTree';
 import SettingsPanel from './components/SettingsPanel';
 import QuickOpen from './components/QuickOpen';
-import MarkdownEditor from './editor/MarkdownEditor';
+import MarkdownEditor, { type MarkdownEditorHandle } from './editor/MarkdownEditor';
 import OutlinePanel from './components/OutlinePanel';
 
 // ─── Types ────────────────────────────────────────────────────────────────────
@@ -51,6 +51,7 @@ export default function App() {
   const [outlineOpen, setOutlineOpen]   = useState(false);
   const activeCursorRef = useRef<number>(0);
   const pendingCursors  = useRef(new Map<string, number>());
+  const editorRef       = useRef<MarkdownEditorHandle>(null);
 
   const deferredSearch = useDeferredValue(searchQuery);
   const autosaveTimer  = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -205,6 +206,7 @@ export default function App() {
       if (ctrl && e.key === 'w' && activePath)     { e.preventDefault(); closeTab(activePath); }
       if (ctrl && e.key === 'p')                   { e.preventDefault(); setQuickOpenOpen(true); }
       if (ctrl && e.key === 'b')                   { e.preventDefault(); setSidebarOpen(v => !v); }
+      if (ctrl && e.shiftKey && e.key === 'O')     { e.preventDefault(); setOutlineOpen(v => !v); }
     };
 
     window.addEventListener('obsidian:tab-next',       onTabNext       as EventListener);
@@ -462,6 +464,14 @@ export default function App() {
                   VIM
                 </button>
                 <div className="editor-toolbar-sep" />
+                <button
+                  className={`editor-mode-btn${outlineOpen ? ' active' : ''}`}
+                  onClick={() => setOutlineOpen(v => !v)}
+                  title="Gliederung (Ctrl+Shift+O)"
+                >
+                  Gliederung
+                </button>
+                <div className="editor-toolbar-sep" />
                 <span className="note-title">{activeTab.path}</span>
                 {activeTab.dirty && (
                   <span style={{ color: 'var(--accent)', fontSize: 11 }}>● Nicht gespeichert</span>
@@ -469,6 +479,7 @@ export default function App() {
               </div>
 
               <MarkdownEditor
+                ref={editorRef}
                 key={activeTab.path}
                 doc={activeTab}
                 editorMode={settings.editorMode}
@@ -489,8 +500,6 @@ export default function App() {
                   setTabs(prev => prev.map(t =>
                     t.path === activeTab.path ? { ...t, headings } : t
                   ));
-                  // Clear anchor after navigation
-                  setPendingAnchor(null);
                 }}
               />
             </>
@@ -526,7 +535,7 @@ export default function App() {
         <QuickOpen
           allPaths={snapshot?.allPaths ?? []}
           onOpen={path => openNote(path)}
-          onClose={() => setQuickOpenOpen(false)}
+          onClose={() => { setQuickOpenOpen(false); setTimeout(() => editorRef.current?.focus(), 0); }}
         />
       )}
 
