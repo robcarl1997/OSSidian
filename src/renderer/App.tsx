@@ -289,6 +289,12 @@ export default function App() {
     setSnapshot(prev => prev ? { ...prev, settings: updated } : prev);
   }, []);
 
+  // ─── Paste attachment ─────────────────────────────────────────────────────
+  const handlePasteAttachment = useCallback(async (data: string, mimeType: string, filename: string): Promise<string> => {
+    const result = await window.vaultApp.saveAttachment(data, mimeType, filename);
+    return result.relativePath;
+  }, []);
+
   // ─── Zoom (Ctrl+/Ctrl-/Ctrl+0) ───────────────────────────────────────────
   useEffect(() => {
     const handler = (e: KeyboardEvent) => {
@@ -523,12 +529,15 @@ export default function App() {
                 fontFamily={settings.editorFontFamily}
                 fontSize={settings.editorFontSize}
                 lineHeight={settings.editorLineHeight}
+                linkFormat={settings.linkFormat}
+                vaultPath={snapshot?.vaultPath ?? ''}
                 allPaths={snapshot?.allPaths ?? []}
                 pendingAnchor={pendingAnchor}
                 initialCursor={pendingCursors.current.get(activeTab.path)}
                 onSave={handleEditorSave}
                 onChange={handleEditorChange}
                 onLinkClick={handleLinkClick}
+                onPasteAttachment={handlePasteAttachment}
                 onCursorChange={(pos) => {
                   activeCursorRef.current = pos;
                   if (activePath) pendingCursors.current.set(activePath, pos);

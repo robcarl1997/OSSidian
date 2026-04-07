@@ -30,6 +30,8 @@ export interface MarkdownEditorProps {
   fontFamily: string;
   fontSize: number;
   lineHeight: number;
+  linkFormat: 'wikilink' | 'markdown';
+  vaultPath: string;
   allPaths: string[];
   pendingAnchor: string | null;
   initialCursor?: number;
@@ -38,6 +40,7 @@ export interface MarkdownEditorProps {
   onLinkClick: (target: string, external: boolean) => void;
   onHeadingsChange: (headings: NoteDocument['headings']) => void;
   onCursorChange?: (pos: number) => void;
+  onPasteAttachment: (data: string, mimeType: string, filename: string) => Promise<string>;
 }
 
 // ─── Theme ───────────────────────────────────────────────────────────────────
@@ -321,6 +324,8 @@ const MarkdownEditor = forwardRef<MarkdownEditorHandle, MarkdownEditorProps>(fun
   fontFamily,
   fontSize,
   lineHeight,
+  linkFormat,
+  vaultPath,
   allPaths,
   pendingAnchor,
   initialCursor,
@@ -329,6 +334,7 @@ const MarkdownEditor = forwardRef<MarkdownEditorHandle, MarkdownEditorProps>(fun
   onLinkClick,
   onHeadingsChange,
   onCursorChange,
+  onPasteAttachment,
 }: MarkdownEditorProps, ref) {
   const containerRef  = useRef<HTMLDivElement>(null);
   const viewRef       = useRef<EditorView | null>(null);
@@ -336,12 +342,14 @@ const MarkdownEditor = forwardRef<MarkdownEditorHandle, MarkdownEditorProps>(fun
   useImperativeHandle(ref, () => ({
     focus: () => viewRef.current?.focus(),
   }));
-  const pathRef             = useRef(doc.path);
-  const onSaveRef           = useRef(onSave);
-  const onChangeRef         = useRef(onChange);
-  const onLinkClickRef      = useRef(onLinkClick);
-  const onCursorChangeRef   = useRef(onCursorChange);
-  const onHeadingsChangeRef = useRef(onHeadingsChange);
+  const pathRef                  = useRef(doc.path);
+  const onSaveRef                = useRef(onSave);
+  const onChangeRef              = useRef(onChange);
+  const onLinkClickRef           = useRef(onLinkClick);
+  const onCursorChangeRef        = useRef(onCursorChange);
+  const onHeadingsChangeRef      = useRef(onHeadingsChange);
+  const onPasteAttachmentRef     = useRef(onPasteAttachment);
+  const linkFormatRef            = useRef(linkFormat);
 
   // Keep refs current
   useEffect(() => { onSaveRef.current = onSave; });
@@ -349,6 +357,8 @@ const MarkdownEditor = forwardRef<MarkdownEditorHandle, MarkdownEditorProps>(fun
   useEffect(() => { onLinkClickRef.current = onLinkClick; });
   useEffect(() => { onCursorChangeRef.current = onCursorChange; });
   useEffect(() => { onHeadingsChangeRef.current = onHeadingsChange; });
+  useEffect(() => { onPasteAttachmentRef.current = onPasteAttachment; });
+  useEffect(() => { linkFormatRef.current = linkFormat; }, [linkFormat]);
 
   // ── Slash command menu state ───────────────────────────────────────────────
   const [slashMenu, setSlashMenu] = useState<{ x: number; y: number; from: number; query: string } | null>(null);
@@ -413,7 +423,7 @@ const MarkdownEditor = forwardRef<MarkdownEditorHandle, MarkdownEditorProps>(fun
         vimCompartment.of(vimMode ? vim() : []),
         livePreviewCompartment.of(
           editorMode === 'live-preview'
-            ? [livePreviewPlugin, livePreviewBlockField, livePreviewConfig.of({ allPaths, notePath: doc.path })]
+            ? [livePreviewPlugin, livePreviewBlockField, livePreviewConfig.of({ allPaths, notePath: doc.path, vaultPath })]
             : [],
         ),
         autocompleteCompartment.of([
@@ -481,7 +491,7 @@ const MarkdownEditor = forwardRef<MarkdownEditorHandle, MarkdownEditorProps>(fun
     view.dispatch({
       effects: livePreviewCompartment.reconfigure(
         editorMode === 'live-preview'
-          ? [livePreviewPlugin, livePreviewBlockField, livePreviewConfig.of({ allPaths, notePath: doc.path })]
+          ? [livePreviewPlugin, livePreviewBlockField, livePreviewConfig.of({ allPaths, notePath: doc.path, vaultPath })]
           : [],
       ),
     });
@@ -568,6 +578,61 @@ const MarkdownEditor = forwardRef<MarkdownEditorHandle, MarkdownEditorProps>(fun
     el.addEventListener('keydown', handler, true); // capture before CM6
     return () => el.removeEventListener('keydown', handler, true);
   }, [slashMenu, filteredCmds, slashSelectedIdx, executeSlashCommand]);
+
+  // ── Clipboard paste: images & files ───────────────────────────────────────
+  useEffect(() => {
+    const el = containerRef.current;
+    if (!el) return;
+
+    const handlePaste = (e: ClipboardEvent) => {
+      const items = e.clipboardData?.items;
+      if (!items) return;
+
+      for (const item of Array.from(items)) {
+        if (!item.type.startsWith('image/')) continue;
+
+        const file = item.getAsFile();
+        if (!file) continue;
+
+        e.preventDefault();
+
+        const ext = item.type.split('/')[1]?.replace('jpeg', 'jpg') || 'png';
+        const now = new Date();
+        const pad = (n: number) => String(n).padStart(2, '0');
+        const dateStr = `${now.getFullYear()}-${pad(now.getMonth() + 1)}-${pad(now.getDate())} ${pad(now.getHours())}-${pad(now.getMinutes())}-${pad(now.getSeconds())}`;
+        const filename = `Pasted image ${dateStr}.${ext}`;
+
+        const reader = new FileReader();
+        reader.onload = async () => {
+          const dataUrl = reader.result as string;
+          const base64 = dataUrl.split(',')[1];
+          if (!base64) return;
+
+          try {
+            const relPath = await onPasteAttachmentRef.current(base64, item.type, filename);
+            const view = viewRef.current;
+            if (!view) return;
+            const pos = view.state.selection.main.head;
+            const insert = linkFormatRef.current === 'wikilink'
+              ? `![[${relPath}]]`
+              : `![${filename}](${relPath})`;
+            view.dispatch({
+              changes: { from: pos, insert },
+              selection: { anchor: pos + insert.length },
+            });
+            onChangeRef.current(view.state.doc.toString());
+          } catch (err) {
+            console.error('[attachment] Einfügen fehlgeschlagen:', err);
+          }
+        };
+        reader.readAsDataURL(file);
+        return; // handle only first image
+      }
+    };
+
+    el.addEventListener('paste', handlePaste);
+    return () => el.removeEventListener('paste', handlePaste);
+  }, []);
 
   // ── Link click events ──────────────────────────────────────────────────────
   const handleLinkClick = useCallback((e: Event) => {

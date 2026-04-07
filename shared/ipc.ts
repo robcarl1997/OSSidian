@@ -39,6 +39,7 @@ export interface AppSettings {
   vimKeybindings: VimKeybinding[];
   vimLeader: string;
   appKeybindings: AppKeybinding[];
+  attachmentFolder: string;    // vault-relative folder for pasted images
 }
 
 export const DEFAULT_SETTINGS: AppSettings = {
@@ -53,6 +54,7 @@ export const DEFAULT_SETTINGS: AppSettings = {
   editorLineHeight: 1.75,
   vimKeybindings: [],
   vimLeader: '\\',
+  attachmentFolder: 'attachments',
   appKeybindings: [
     { key: 'Ctrl+P',         action: 'quickOpen'     },
     { key: 'Ctrl+B',         action: 'toggleSidebar' },
@@ -133,6 +135,7 @@ export interface VaultApi {
   search(query: string): Promise<SearchResult[]>;
   openExternal(url: string): Promise<void>;
   updateSettings(settings: Partial<AppSettings>): Promise<AppSettings>;
+  saveAttachment(data: string, mimeType: string, filename: string): Promise<{ relativePath: string }>;
   onVaultChanged(cb: (event: VaultChangeEvent) => void): () => void;
 }
 

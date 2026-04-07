@@ -32,6 +32,9 @@ const api: VaultApi = {
   updateSettings: (settings: Partial<AppSettings>) =>
     ipcRenderer.invoke('settings:update', settings),
 
+  saveAttachment: (data: string, mimeType: string, filename: string) =>
+    ipcRenderer.invoke('attachment:save', data, mimeType, filename),
+
   onVaultChanged: (cb: (event: VaultChangeEvent) => void) => {
     const handler = (_e: Electron.IpcRendererEvent, event: VaultChangeEvent) => cb(event);
     ipcRenderer.on('vault:changed', handler);

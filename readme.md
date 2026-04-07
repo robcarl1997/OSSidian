@@ -3,10 +3,20 @@
 - [ ] Ordner 
 - [ ] Frontmatter yaml
 - [ ] Templates
+- [ ] Calender function with drag and drop -> frontmatter
+- [ ] kanban view
 - [ ] integriertes terminal
+- [ ] 
 - [ ] query
+- [ ] 
 - [ ] images and other attachments
 - [x] general Shortcuts and mappings (indep. from vim)
     - [ ] all functions
 - [ ] manipulate size of images
 - [ ] jump function for vim
+- [ ] password for app or certain files
+     - [ ] encryption?
+ - [ ] git integration
+ - [ ] Command palette
+ - [ ] Analyse licences
+ - [ ] Rename OSSidian

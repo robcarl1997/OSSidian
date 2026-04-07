@@ -1,4 +1,4 @@
-import { app, BrowserWindow, ipcMain, dialog, shell } from 'electron';
+import { app, BrowserWindow, ipcMain, dialog, shell, protocol } from 'electron';
 import * as fs from 'fs';
 import * as path from 'path';
 import chokidar from 'chokidar';
@@ -285,6 +285,30 @@ function setupIPC(): void {
     return settings;
   });
 
+  // ── attachment:save ──────────────────────────────────────────────────────
+  ipcMain.handle('attachment:save', (_e, data: string, _mimeType: string, filename: string) => {
+    if (!vaultPath) throw new Error('Kein Vault geöffnet');
+
+    const folderName = settings.attachmentFolder?.trim() || 'attachments';
+    const attachmentDir = path.join(vaultPath, folderName);
+    fs.mkdirSync(attachmentDir, { recursive: true });
+
+    // Deduplicate: "Pasted image 2024-01-01.png" → "Pasted image 2024-01-01 1.png"
+    const ext  = path.extname(filename);
+    const base = path.basename(filename, ext);
+    let finalPath = path.join(attachmentDir, filename);
+    let counter = 1;
+    while (fs.existsSync(finalPath)) {
+      finalPath = path.join(attachmentDir, `${base} ${counter}${ext}`);
+      counter++;
+    }
+
+    fs.writeFileSync(finalPath, Buffer.from(data, 'base64'));
+
+    const relativePath = path.relative(vaultPath, finalPath).replace(/\\/g, '/');
+    return { relativePath };
+  });
+
   // ── Window controls ──────────────────────────────────────────────────────
   ipcMain.handle('window:minimize',        () => mainWindow?.minimize());
   ipcMain.handle('window:toggle-maximize', () => {
@@ -356,8 +380,43 @@ function createWindow(): void {
 
 // ─── App lifecycle ────────────────────────────────────────────────────────────
 
+// Must be called before app.whenReady() so Electron registers the scheme
+// before any renderer session is created.
+protocol.registerSchemesAsPrivileged([
+  { scheme: 'vault', privileges: { standard: true, secure: true, supportFetchAPI: true, corsEnabled: true } },
+]);
+
 app.whenReady().then(() => {
   settings = loadSettings();
+
+  // Serve vault-relative asset paths via vault://host/path so the renderer can
+  // load local images without hitting Electron's file:// cross-origin block.
+  // URL parsing: vault://attachments/image.png → host="attachments", pathname="/image.png"
+  // → vault-relative path = host + pathname = "attachments/image.png"
+  const MIME: Record<string, string> = {
+    png: 'image/png', jpg: 'image/jpeg', jpeg: 'image/jpeg',
+    gif: 'image/gif', webp: 'image/webp', svg: 'image/svg+xml',
+    bmp: 'image/bmp', ico: 'image/x-icon', avif: 'image/avif',
+  };
+  const vaultProtocolHandler = (request: Request): Response => {
+    try {
+      // Avoid new URL() hostname/pathname split: just strip the scheme prefix
+      const rawPath = request.url.slice('vault://'.length);   // "attachments/Pasted%20image.png"
+      const relative = decodeURIComponent(rawPath);            // "attachments/Pasted image.png"
+      const absolute = path.join(vaultPath ?? '', relative);
+      const data = fs.readFileSync(absolute);
+      const ext  = path.extname(absolute).toLowerCase().slice(1);
+      return new Response(new Uint8Array(data), {
+        status: 200,
+        headers: { 'content-type': MIME[ext] ?? 'application/octet-stream' },
+      });
+    } catch (err) {
+      console.error('[vault://]', err);
+      return new Response('Not found', { status: 404 });
+    }
+  };
+  protocol.handle('vault', vaultProtocolHandler);
+
   setupIPC();
   createWindow();
 });

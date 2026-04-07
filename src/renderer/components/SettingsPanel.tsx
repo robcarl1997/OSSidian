@@ -268,9 +268,10 @@ function MarkdownTab({
   local: Partial<AppSettings>;
   setLocal: React.Dispatch<React.SetStateAction<Partial<AppSettings>>>;
 }) {
-  const editorMode     = local.editorMode     ?? 'live-preview';
-  const linkFormat     = local.linkFormat     ?? 'wikilink';
+  const editorMode      = local.editorMode      ?? 'live-preview';
+  const linkFormat      = local.linkFormat      ?? 'wikilink';
   const autoUpdateLinks = local.autoUpdateLinks ?? true;
+  const attachmentFolder = local.attachmentFolder ?? 'attachments';
 
   return (
     <div className="settings-body">
@@ -328,6 +329,22 @@ function MarkdownTab({
           <Toggle
             checked={autoUpdateLinks}
             onChange={v => setLocal(l => ({ ...l, autoUpdateLinks: v }))}
+          />
+        </div>
+      </div>
+
+      <div className="settings-section">
+        <div className="settings-section-title">Anhänge</div>
+        <div className="settings-row">
+          <div className="settings-label">
+            Anhang-Ordner
+            <small>Ordner relativ zum Vault-Root für eingefügte Bilder</small>
+          </div>
+          <input
+            className="settings-text-input"
+            value={attachmentFolder}
+            placeholder="attachments"
+            onChange={e => setLocal(l => ({ ...l, attachmentFolder: e.target.value }))}
           />
         </div>
       </div>

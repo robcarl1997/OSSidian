@@ -659,6 +659,16 @@ body {
 .cm-ext-link { color: var(--accent-dim); cursor: pointer; }
 .cm-ext-link:hover { text-decoration: underline; }
 
+/* Embedded images */
+.cm-image-widget {
+  display: block;
+  max-width: 100%;
+  max-height: 600px;
+  border-radius: 4px;
+  margin: 4px 0;
+  object-fit: contain;
+}
+
 /* Blockquote */
 .cm-blockquote {
   color: var(--text-muted);

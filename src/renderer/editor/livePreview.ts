@@ -21,10 +21,11 @@ import { EditorState, Facet, RangeSetBuilder, StateField } from '@codemirror/sta
 export interface LivePreviewConfig {
   allPaths: string[];
   notePath: string;
+  vaultPath: string;
 }
 
 export const livePreviewConfig = Facet.define<LivePreviewConfig, LivePreviewConfig>({
-  combine: vs => vs[0] ?? { allPaths: [], notePath: '' },
+  combine: vs => vs[0] ?? { allPaths: [], notePath: '', vaultPath: '' },
 });
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
@@ -294,6 +295,35 @@ class CheckboxWidget extends WidgetType {
   }
 }
 
+class ImageWidget extends WidgetType {
+  constructor(readonly alt: string, readonly src: string, readonly vaultPath: string) { super(); }
+
+  eq(other: ImageWidget) {
+    return this.alt === other.alt && this.src === other.src && this.vaultPath === other.vaultPath;
+  }
+
+  toDOM(): HTMLElement {
+    const img = document.createElement('img');
+    img.alt = this.alt;
+    img.className = 'cm-image-widget';
+    // vault:// is a custom Electron protocol that resolves vault-relative paths.
+    // External images use their URL directly.
+    img.src = /^https?:\/\//.test(this.src)
+      ? this.src
+      : `vault://${this.src}`;
+    return img;
+  }
+
+  ignoreEvent() { return true; }
+}
+
+const IMAGE_EXTS = new Set(['png', 'jpg', 'jpeg', 'gif', 'svg', 'webp', 'bmp', 'ico', 'avif']);
+
+function isImagePath(src: string): boolean {
+  const ext = src.split('.').pop()?.toLowerCase().split('?')[0] ?? '';
+  return IMAGE_EXTS.has(ext);
+}
+
 // ─── Decoration builder ───────────────────────────────────────────────────────
 
 interface Deco { from: number; to: number; value: Decoration }
@@ -465,6 +495,33 @@ const INLINE_PATTERNS: Array<{
       const ct = lineFrom + m.index + m[0].length - 1;
       if (cf < ct) pushMark(out, cf, ct, 'cm-inline-code');
       pushReplace(out, ct, lineFrom + m.index + m[0].length);
+    },
+  },
+  // Image wikilinks: ![[image.png]]
+  {
+    re: /!\[\[([^\]\r\n]+?)\]\]/g,
+    handle(m, lineFrom, out, config) {
+      const src = m[1].trim();
+      if (!isImagePath(src)) return;
+      out.push({
+        from:  lineFrom + m.index,
+        to:    lineFrom + m.index + m[0].length,
+        value: Decoration.replace({ widget: new ImageWidget(src, src, config.vaultPath) }),
+      });
+    },
+  },
+  // Image markdown links: ![alt](path)
+  {
+    re: /!\[([^\]]*)\]\(([^)]+)\)/g,
+    handle(m, lineFrom, out, config) {
+      const alt = m[1];
+      const src = m[2].trim();
+      if (!isImagePath(src) && !/^https?:\/\//.test(src)) return;
+      out.push({
+        from:  lineFrom + m.index,
+        to:    lineFrom + m.index + m[0].length,
+        value: Decoration.replace({ widget: new ImageWidget(alt || src, src, config.vaultPath) }),
+      });
     },
   },
   // Wikilinks: [[Note]] or [[Note|Alias]] or [[Note#anchor]]
