@@ -122,6 +122,29 @@ export interface RenameResult {
   updatedFiles: number;
 }
 
+// ─── Git ─────────────────────────────────────────────────────────────────────
+
+export interface GitFileStatus {
+  path: string;
+  index: string;      // staged:   ' ' | 'M' | 'A' | 'D' | 'R' | '?'
+  workingDir: string; // unstaged: ' ' | 'M' | 'D' | '?'
+}
+
+export interface GitStatus {
+  isRepo: boolean;
+  branch: string;
+  ahead: number;
+  behind: number;
+  files: GitFileStatus[];
+}
+
+export interface GitCommit {
+  hash: string;
+  message: string;
+  author: string;
+  date: string;
+}
+
 // ─── API exposed to renderer ──────────────────────────────────────────────────
 
 export interface VaultApi {
@@ -137,6 +160,15 @@ export interface VaultApi {
   updateSettings(settings: Partial<AppSettings>): Promise<AppSettings>;
   saveAttachment(data: string, mimeType: string, filename: string): Promise<{ relativePath: string }>;
   onVaultChanged(cb: (event: VaultChangeEvent) => void): () => void;
+  // ── Git ──────────────────────────────────────────────────────────────────
+  gitStatus(): Promise<GitStatus>;
+  gitInit(): Promise<void>;
+  gitAdd(paths: string[]): Promise<void>;
+  gitUnstage(paths: string[]): Promise<void>;
+  gitCommit(message: string): Promise<GitCommit>;
+  gitLog(limit?: number): Promise<GitCommit[]>;
+  gitFileAtHead(filePath: string): Promise<string | null>;
+  gitRestore(paths: string[]): Promise<void>;
 }
 
 export interface WindowControls {

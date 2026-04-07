@@ -7,6 +7,7 @@ import { markdown, markdownLanguage } from '@codemirror/lang-markdown';
 import { vim, Vim } from '@replit/codemirror-vim';
 import { livePreviewPlugin, livePreviewBlockField, livePreviewConfig } from './livePreview';
 import { wikilinkAutocomplete, autocompleteConfig } from './linkAutocomplete';
+import { gitGutterExtension, setGitHunks, computeHunks, type GitHunk } from './gitGutter';
 import type { NoteDocument, VimKeybinding } from '../../../shared/ipc';
 import { extractHeadings } from '../../../shared/linking';
 import SlashCommandMenu from './SlashCommandMenu';
@@ -41,6 +42,7 @@ export interface MarkdownEditorProps {
   onHeadingsChange: (headings: NoteDocument['headings']) => void;
   onCursorChange?: (pos: number) => void;
   onPasteAttachment: (data: string, mimeType: string, filename: string) => Promise<string>;
+  headContent?: string | null;
 }
 
 // ─── Theme ───────────────────────────────────────────────────────────────────
@@ -306,6 +308,7 @@ const BASE_EXTENSIONS: Extension[] = [
   search({ top: false }),
   highlightActiveLine(),
   drawSelection(),
+  gitGutterExtension(),
   relativeLineNumbers,
   EditorView.lineWrapping,
   markdown({ base: markdownLanguage }),
@@ -335,6 +338,7 @@ const MarkdownEditor = forwardRef<MarkdownEditorHandle, MarkdownEditorProps>(fun
   onHeadingsChange,
   onCursorChange,
   onPasteAttachment,
+  headContent,
 }: MarkdownEditorProps, ref) {
   const containerRef  = useRef<HTMLDivElement>(null);
   const viewRef       = useRef<EditorView | null>(null);
@@ -350,6 +354,11 @@ const MarkdownEditor = forwardRef<MarkdownEditorHandle, MarkdownEditorProps>(fun
   const onHeadingsChangeRef      = useRef(onHeadingsChange);
   const onPasteAttachmentRef     = useRef(onPasteAttachment);
   const linkFormatRef            = useRef(linkFormat);
+  const headContentRef           = useRef(headContent);
+  const diffTimerRef             = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  // Hunk popup state
+  const [hunkPopup, setHunkPopup] = useState<{ x: number; y: number; hunk: GitHunk } | null>(null);
 
   // Keep refs current
   useEffect(() => { onSaveRef.current = onSave; });
@@ -359,6 +368,7 @@ const MarkdownEditor = forwardRef<MarkdownEditorHandle, MarkdownEditorProps>(fun
   useEffect(() => { onHeadingsChangeRef.current = onHeadingsChange; });
   useEffect(() => { onPasteAttachmentRef.current = onPasteAttachment; });
   useEffect(() => { linkFormatRef.current = linkFormat; }, [linkFormat]);
+  useEffect(() => { headContentRef.current = headContent; }, [headContent]);
 
   // ── Slash command menu state ───────────────────────────────────────────────
   const [slashMenu, setSlashMenu] = useState<{ x: number; y: number; from: number; query: string } | null>(null);
@@ -379,6 +389,15 @@ const MarkdownEditor = forwardRef<MarkdownEditorHandle, MarkdownEditorProps>(fun
         const raw = update.state.doc.toString();
         onChangeRef.current(raw);
         onHeadingsChangeRef.current(extractHeadings(raw));
+
+        // Debounced git diff recomputation
+        if (diffTimerRef.current) clearTimeout(diffTimerRef.current);
+        diffTimerRef.current = setTimeout(() => {
+          const hc = headContentRef.current;
+          if (hc === undefined) return;
+          const hunks = computeHunks(hc, update.view.state.doc.toString());
+          update.view.dispatch({ effects: setGitHunks.of(hunks) });
+        }, 250);
       }
       if (update.selectionSet) {
         onCursorChangeRef.current?.(update.state.selection.main.head);
@@ -516,6 +535,14 @@ const MarkdownEditor = forwardRef<MarkdownEditorHandle, MarkdownEditorProps>(fun
     view.dispatch({ effects: fontCompartment.reconfigure(makeFontTheme(fontFamily, fontSize, lineHeight)) });
   }, [fontFamily, fontSize, lineHeight]);
 
+  // ── Recompute git hunks when headContent changes ───────────────────────────
+  useEffect(() => {
+    const view = viewRef.current;
+    if (!view) return;
+    const hunks = computeHunks(headContent ?? null, view.state.doc.toString());
+    view.dispatch({ effects: setGitHunks.of(hunks) });
+  }, [headContent]);
+
   // ── Navigate to anchor ─────────────────────────────────────────────────────
   useEffect(() => {
     if (!pendingAnchor || !viewRef.current) return;
@@ -578,6 +605,55 @@ const MarkdownEditor = forwardRef<MarkdownEditorHandle, MarkdownEditorProps>(fun
     el.addEventListener('keydown', handler, true); // capture before CM6
     return () => el.removeEventListener('keydown', handler, true);
   }, [slashMenu, filteredCmds, slashSelectedIdx, executeSlashCommand]);
+
+  // ── Git hunk click → revert popup ─────────────────────────────────────────
+  useEffect(() => {
+    const el = containerRef.current;
+    if (!el) return;
+    const handler = (e: Event) => {
+      const { x, y, hunk } = (e as CustomEvent<{ x: number; y: number; hunk: GitHunk }>).detail;
+      setHunkPopup(prev => (prev?.hunk === hunk ? null : { x, y, hunk }));
+    };
+    el.addEventListener('git:hunk-click', handler);
+    return () => el.removeEventListener('git:hunk-click', handler);
+  }, []);
+
+  // Close popup when clicking outside
+  useEffect(() => {
+    if (!hunkPopup) return;
+    const handler = () => setHunkPopup(null);
+    document.addEventListener('mousedown', handler);
+    return () => document.removeEventListener('mousedown', handler);
+  }, [hunkPopup]);
+
+  const revertHunk = useCallback((hunk: GitHunk) => {
+    const view = viewRef.current;
+    if (!view) return;
+    const state = view.state;
+
+    if (hunk.type === 'added') {
+      const fromLine = state.doc.line(hunk.currentFrom);
+      const toLine   = state.doc.line(Math.min(hunk.currentTo, state.doc.lines));
+      // Include the newline after the last added line, if present
+      const to = toLine.to < state.doc.length ? toLine.to + 1 : toLine.to;
+      view.dispatch({ changes: { from: fromLine.from, to, insert: '' } });
+    } else if (hunk.type === 'modified') {
+      const fromLine = state.doc.line(hunk.currentFrom);
+      const toLine   = state.doc.line(Math.min(hunk.currentTo, state.doc.lines));
+      const insert   = hunk.headContent.endsWith('\n') ? hunk.headContent.slice(0, -1) : hunk.headContent;
+      view.dispatch({ changes: { from: fromLine.from, to: toLine.to, insert } });
+    } else if (hunk.type === 'deleted') {
+      const insertAt = hunk.currentFrom <= state.doc.lines
+        ? state.doc.line(hunk.currentFrom).from
+        : state.doc.length;
+      view.dispatch({ changes: { from: insertAt, insert: hunk.headContent } });
+    }
+
+    setHunkPopup(null);
+    const raw = view.state.doc.toString();
+    onChangeRef.current(raw);
+    onSaveRef.current(raw);
+  }, []);
 
   // ── Clipboard paste: images & files ───────────────────────────────────────
   useEffect(() => {
@@ -649,10 +725,8 @@ const MarkdownEditor = forwardRef<MarkdownEditorHandle, MarkdownEditorProps>(fun
 
   return (
     <>
-      <div
-        ref={containerRef}
-        className="editor-wrap"
-      />
+      <div ref={containerRef} className="editor-wrap" />
+
       {slashMenu && filteredCmds.length > 0 && (
         <SlashCommandMenu
           x={slashMenu.x}
@@ -661,6 +735,29 @@ const MarkdownEditor = forwardRef<MarkdownEditorHandle, MarkdownEditorProps>(fun
           selectedIdx={slashSelectedIdx}
           onSelect={executeSlashCommand}
         />
+      )}
+
+      {hunkPopup && (
+        <div
+          className="git-hunk-popup"
+          style={{ left: hunkPopup.x + 8, top: hunkPopup.y }}
+          onMouseDown={e => e.stopPropagation()}
+        >
+          <div className="git-hunk-popup-type">
+            {hunkPopup.hunk.type === 'added'    && 'Hinzugefügt'}
+            {hunkPopup.hunk.type === 'modified' && 'Geändert'}
+            {hunkPopup.hunk.type === 'deleted'  && 'Gelöscht'}
+          </div>
+          {hunkPopup.hunk.headContent && (
+            <pre className="git-hunk-popup-diff">{hunkPopup.hunk.headContent}</pre>
+          )}
+          <button
+            className="btn btn-danger git-hunk-popup-btn"
+            onClick={() => revertHunk(hunkPopup.hunk)}
+          >
+            Zurücksetzen
+          </button>
+        </div>
       )}
     </>
   );

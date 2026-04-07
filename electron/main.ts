@@ -2,6 +2,7 @@ import { app, BrowserWindow, ipcMain, dialog, shell, protocol } from 'electron';
 import * as fs from 'fs';
 import * as path from 'path';
 import chokidar from 'chokidar';
+import simpleGit from 'simple-git';
 import type {
   AppSettings,
   VaultEntry,
@@ -10,6 +11,8 @@ import type {
   SearchResult,
   RenameResult,
   VaultChangeEvent,
+  GitStatus,
+  GitCommit,
 } from '../shared/ipc';
 import { DEFAULT_SETTINGS } from '../shared/ipc';
 import { extractHeadings, rewriteWikilinks } from '../shared/linking';
@@ -307,6 +310,106 @@ function setupIPC(): void {
 
     const relativePath = path.relative(vaultPath, finalPath).replace(/\\/g, '/');
     return { relativePath };
+  });
+
+  // ── git:status ───────────────────────────────────────────────────────────
+  ipcMain.handle('git:status', async (): Promise<GitStatus> => {
+    if (!vaultPath) return { isRepo: false, branch: '', ahead: 0, behind: 0, files: [] };
+    const git = simpleGit(vaultPath);
+    try {
+      const isRepo = await git.checkIsRepo();
+      if (!isRepo) return { isRepo: false, branch: '', ahead: 0, behind: 0, files: [] };
+      const status = await git.status();
+      return {
+        isRepo: true,
+        branch: status.current ?? '',
+        ahead:  status.ahead,
+        behind: status.behind,
+        files: status.files.map(f => ({ path: f.path, index: f.index, workingDir: f.working_dir })),
+      };
+    } catch {
+      return { isRepo: false, branch: '', ahead: 0, behind: 0, files: [] };
+    }
+  });
+
+  // ── git:init ─────────────────────────────────────────────────────────────
+  ipcMain.handle('git:init', async () => {
+    if (!vaultPath) throw new Error('Kein Vault geöffnet');
+    await simpleGit(vaultPath).init();
+  });
+
+  // ── git:add ──────────────────────────────────────────────────────────────
+  ipcMain.handle('git:add', async (_e, paths: string[]) => {
+    if (!vaultPath) throw new Error('Kein Vault geöffnet');
+    await simpleGit(vaultPath).add(paths);
+  });
+
+  // ── git:unstage ──────────────────────────────────────────────────────────
+  ipcMain.handle('git:unstage', async (_e, paths: string[]) => {
+    if (!vaultPath) throw new Error('Kein Vault geöffnet');
+    await simpleGit(vaultPath).reset(['HEAD', '--', ...paths]);
+  });
+
+  // ── git:commit ───────────────────────────────────────────────────────────
+  ipcMain.handle('git:commit', async (_e, message: string): Promise<GitCommit> => {
+    if (!vaultPath) throw new Error('Kein Vault geöffnet');
+    const git = simpleGit(vaultPath);
+    await git.commit(message);
+    const log = await git.log({ maxCount: 1 });
+    const latest = log.latest;
+    return {
+      hash:    latest?.hash    ?? '',
+      message: latest?.message ?? message,
+      author:  latest?.author_name ?? '',
+      date:    latest?.date    ?? new Date().toISOString(),
+    };
+  });
+
+  // ── git:log ──────────────────────────────────────────────────────────────
+  ipcMain.handle('git:log', async (_e, limit = 20): Promise<GitCommit[]> => {
+    if (!vaultPath) return [];
+    try {
+      const log = await simpleGit(vaultPath).log({ maxCount: limit });
+      return log.all.map(c => ({
+        hash:    c.hash,
+        message: c.message,
+        author:  c.author_name,
+        date:    c.date,
+      }));
+    } catch {
+      return [];
+    }
+  });
+
+  // ── git:restore ──────────────────────────────────────────────────────────
+  ipcMain.handle('git:restore', async (_e, paths: string[]) => {
+    if (!vaultPath) throw new Error('Kein Vault geöffnet');
+    const git = simpleGit(vaultPath);
+    const status = await git.status();
+    const untracked = new Set(status.not_added);
+
+    const tracked   = paths.filter(p => !untracked.has(p));
+    const toDelete  = paths.filter(p => untracked.has(p));
+
+    if (tracked.length > 0) {
+      await git.checkout(['HEAD', '--', ...tracked]);
+    }
+    for (const p of toDelete) {
+      try { fs.unlinkSync(path.join(vaultPath, p)); } catch { /* ignore */ }
+    }
+  });
+
+  // ── git:file-at-head ─────────────────────────────────────────────────────
+  ipcMain.handle('git:file-at-head', async (_e, filePath: string): Promise<string | null> => {
+    if (!vaultPath) return null;
+    try {
+      const git = simpleGit(vaultPath);
+      if (!await git.checkIsRepo()) return null;
+      const relative = path.relative(vaultPath, filePath).replace(/\\/g, '/');
+      return await git.show([`HEAD:${relative}`]);
+    } catch {
+      return null; // new file not yet in HEAD
+    }
   });
 
   // ── Window controls ──────────────────────────────────────────────────────

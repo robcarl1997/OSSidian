@@ -32,6 +32,7 @@ import SettingsPanel from './components/SettingsPanel';
 import QuickOpen from './components/QuickOpen';
 import MarkdownEditor, { type MarkdownEditorHandle } from './editor/MarkdownEditor';
 import OutlinePanel from './components/OutlinePanel';
+import GitPanel from './components/GitPanel';
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -60,10 +61,16 @@ export default function App() {
   const [navHistory, setNavHistory]     = useState<{ path: string; cursor: number }[]>([]);
   const [quickOpenOpen, setQuickOpenOpen] = useState(false);
   const [sidebarOpen, setSidebarOpen]   = useState(true);
+  const [sidebarTab, setSidebarTab]     = useState<'files' | 'git'>('files');
   const [outlineOpen, setOutlineOpen]   = useState(false);
-  const activeCursorRef = useRef<number>(0);
-  const pendingCursors  = useRef(new Map<string, number>());
-  const editorRef       = useRef<MarkdownEditorHandle>(null);
+  const [headContent, setHeadContent] = useState<string | null | undefined>(undefined);
+  const activeCursorRef  = useRef<number>(0);
+  const pendingCursors   = useRef(new Map<string, number>());
+  const editorRef        = useRef<MarkdownEditorHandle>(null);
+  const snapshotRef      = useRef(snapshot);
+  const activePathRef    = useRef(activePath);
+  useEffect(() => { snapshotRef.current = snapshot; }, [snapshot]);
+  useEffect(() => { activePathRef.current = activePath; }, [activePath]);
 
   const deferredSearch = useDeferredValue(searchQuery);
   const autosaveTimer  = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -289,6 +296,33 @@ export default function App() {
     setSnapshot(prev => prev ? { ...prev, settings: updated } : prev);
   }, []);
 
+  // ─── Reload open tabs after git restore ──────────────────────────────────
+  const handleRestoreComplete = useCallback(async (vaultRelPaths: string[]) => {
+    const vaultRoot = snapshotRef.current?.vaultPath;
+    if (!vaultRoot) return;
+    for (const rel of vaultRelPaths) {
+      const fullPath = `${vaultRoot}/${rel}`;
+      // Use functional setState to avoid stale closure over `tabs`
+      setTabs(prev => {
+        if (!prev.find(t => t.path === fullPath)) return prev;
+        window.vaultApp.openNote(fullPath).then(doc => {
+          setTabs(curr => curr.map(t => t.path === fullPath ? { ...doc, dirty: false } : t));
+          if (activePathRef.current === fullPath) {
+            window.vaultApp.gitFileAtHead(fullPath).then(setHeadContent);
+          }
+        });
+        return prev; // unchanged until async resolves
+      });
+    }
+  }, []);
+
+  // ─── Fetch HEAD content for git gutter ───────────────────────────────────
+  useEffect(() => {
+    if (!activePath) { setHeadContent(undefined); return; }
+    setHeadContent(undefined);
+    window.vaultApp.gitFileAtHead(activePath).then(setHeadContent);
+  }, [activePath]);
+
   // ─── Paste attachment ─────────────────────────────────────────────────────
   const handlePasteAttachment = useCallback(async (data: string, mimeType: string, filename: string): Promise<string> => {
     const result = await window.vaultApp.saveAttachment(data, mimeType, filename);
@@ -413,53 +447,84 @@ export default function App() {
           >⚙</button>
         </div>
 
-        {/* Search bar */}
-        <div className="search-bar">
-          <input
-            className="search-input"
-            placeholder="🔍 Suchen…"
-            value={searchQuery}
-            onChange={e => setSearchQuery(e.target.value)}
-          />
+        {/* Sidebar tabs */}
+        <div className="sidebar-tabs">
+          <button
+            className={`sidebar-tab-btn${sidebarTab === 'files' ? ' active' : ''}`}
+            onClick={() => setSidebarTab('files')}
+            title="Dateien"
+          >
+            📄 Dateien
+          </button>
+          <button
+            className={`sidebar-tab-btn${sidebarTab === 'git' ? ' active' : ''}`}
+            onClick={() => setSidebarTab('git')}
+            title="Git"
+          >
+            ⎇ Git
+          </button>
         </div>
 
-        {/* Content: search results or file tree */}
-        {searchQuery.trim() ? (
-          <div className="search-results">
-            {searchResults.length === 0 ? (
-              <div style={{ padding: '12px', color: 'var(--text-faint)', fontSize: 12 }}>
-                Keine Treffer für „{searchQuery}"
-              </div>
-            ) : searchResults.map(r => (
-              <div
-                key={r.path}
-                className="search-result"
-                onClick={() => { openNote(r.path); setSearchQuery(''); }}
-              >
-                <div className="search-result-name">{r.name}</div>
-                <div className="search-result-excerpt">{r.excerpt}</div>
-              </div>
-            ))}
-          </div>
-        ) : (
-          snapshot?.vaultPath ? (
-            <FileTree
-              tree={snapshot.tree}
-              vaultPath={snapshot.vaultPath}
-              activePath={activePath}
-              onOpen={openNote}
-              onCreateFile={path => { setDialog({ kind: 'create-file', parentPath: path }); setDialogInput(''); }}
-              onCreateFolder={path => { setDialog({ kind: 'create-folder', parentPath: path }); setDialogInput(''); }}
-              onRename={entry => { setDialog({ kind: 'rename', entry }); setDialogInput(entry.name.replace(/\.md$/, '')); }}
-              onDelete={entry => { setDialog({ kind: 'delete', entry }); }}
-            />
-          ) : (
-            <div style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', flexDirection: 'column', gap: 8 }}>
-              <div style={{ color: 'var(--text-faint)', fontSize: 13, textAlign: 'center', padding: '0 16px' }}>
-                Kein Vault geöffnet
-              </div>
+        {sidebarTab === 'files' ? (
+          <>
+            {/* Search bar */}
+            <div className="search-bar">
+              <input
+                className="search-input"
+                placeholder="🔍 Suchen…"
+                value={searchQuery}
+                onChange={e => setSearchQuery(e.target.value)}
+              />
             </div>
-          )
+
+            {/* Content: search results or file tree */}
+            {searchQuery.trim() ? (
+              <div className="search-results">
+                {searchResults.length === 0 ? (
+                  <div style={{ padding: '12px', color: 'var(--text-faint)', fontSize: 12 }}>
+                    Keine Treffer für „{searchQuery}"
+                  </div>
+                ) : searchResults.map(r => (
+                  <div
+                    key={r.path}
+                    className="search-result"
+                    onClick={() => { openNote(r.path); setSearchQuery(''); }}
+                  >
+                    <div className="search-result-name">{r.name}</div>
+                    <div className="search-result-excerpt">{r.excerpt}</div>
+                  </div>
+                ))}
+              </div>
+            ) : (
+              snapshot?.vaultPath ? (
+                <FileTree
+                  tree={snapshot.tree}
+                  vaultPath={snapshot.vaultPath}
+                  activePath={activePath}
+                  onOpen={openNote}
+                  onCreateFile={path => { setDialog({ kind: 'create-file', parentPath: path }); setDialogInput(''); }}
+                  onCreateFolder={path => { setDialog({ kind: 'create-folder', parentPath: path }); setDialogInput(''); }}
+                  onRename={entry => { setDialog({ kind: 'rename', entry }); setDialogInput(entry.name.replace(/\.md$/, '')); }}
+                  onDelete={entry => { setDialog({ kind: 'delete', entry }); }}
+                />
+              ) : (
+                <div style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', flexDirection: 'column', gap: 8 }}>
+                  <div style={{ color: 'var(--text-faint)', fontSize: 13, textAlign: 'center', padding: '0 16px' }}>
+                    Kein Vault geöffnet
+                  </div>
+                </div>
+              )
+            )}
+          </>
+        ) : (
+          <GitPanel
+            vaultPath={snapshot?.vaultPath ?? null}
+            onFileOpen={openNote}
+            onCommit={() => {
+              if (activePath) window.vaultApp.gitFileAtHead(activePath).then(setHeadContent);
+            }}
+            onRestoreComplete={handleRestoreComplete}
+          />
         )}
 
         {/* Footer */}
@@ -537,6 +602,7 @@ export default function App() {
                 onSave={handleEditorSave}
                 onChange={handleEditorChange}
                 onLinkClick={handleLinkClick}
+                headContent={headContent}
                 onPasteAttachment={handlePasteAttachment}
                 onCursorChange={(pos) => {
                   activeCursorRef.current = pos;

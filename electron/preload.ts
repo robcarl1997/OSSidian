@@ -1,5 +1,5 @@
 import { contextBridge, ipcRenderer } from 'electron';
-import type { VaultApi, AppSettings, VaultChangeEvent } from '../shared/ipc';
+import type { VaultApi, AppSettings, VaultChangeEvent, GitCommit } from '../shared/ipc';
 
 const api: VaultApi = {
   getInitialState: () =>
@@ -40,6 +40,15 @@ const api: VaultApi = {
     ipcRenderer.on('vault:changed', handler);
     return () => ipcRenderer.removeListener('vault:changed', handler);
   },
+
+  gitStatus:  ()                                    => ipcRenderer.invoke('git:status'),
+  gitInit:    ()                                    => ipcRenderer.invoke('git:init'),
+  gitAdd:     (paths: string[])                     => ipcRenderer.invoke('git:add', paths),
+  gitUnstage: (paths: string[])                     => ipcRenderer.invoke('git:unstage', paths),
+  gitCommit:  (message: string): Promise<GitCommit> => ipcRenderer.invoke('git:commit', message),
+  gitLog:         (limit?: number)              => ipcRenderer.invoke('git:log', limit),
+  gitFileAtHead:  (filePath: string)            => ipcRenderer.invoke('git:file-at-head', filePath),
+  gitRestore:     (paths: string[])             => ipcRenderer.invoke('git:restore', paths),
 };
 
 contextBridge.exposeInMainWorld('vaultApp', api);
