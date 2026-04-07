@@ -4,6 +4,7 @@ import type { GitStatus, GitCommit, GitFileStatus } from '../../../shared/ipc';
 interface GitPanelProps {
   vaultPath: string | null;
   onFileOpen: (path: string) => void;
+  onOpenDiff?: (vaultRelPath: string) => void;
   onCommit?: () => void;
   onRestoreComplete?: (vaultRelPaths: string[]) => void;
 }
@@ -44,6 +45,7 @@ function FileRow({
   vaultPath,
   onAction,
   onOpen,
+  onDiff,
   onRestore,
 }: {
   file: GitFileStatus;
@@ -51,12 +53,14 @@ function FileRow({
   vaultPath: string;
   onAction: (path: string, staged: boolean) => void;
   onOpen: (path: string) => void;
+  onDiff?: (path: string) => void;
   onRestore?: (path: string) => void;
 }) {
   const label = staged ? statusLabel(file.index, ' ') : statusLabel(' ', file.workingDir === '?' ? '?' : file.workingDir);
   const title = statusTitle(file.index, file.workingDir);
   const name  = file.path.split('/').pop() ?? file.path;
   const fullPath = `${vaultPath}/${file.path}`;
+  const isMarkdown = file.path.endsWith('.md');
 
   return (
     <div className="git-file-row" title={file.path}>
@@ -64,10 +68,19 @@ function FileRow({
       <span
         className="git-file-name"
         title={title}
-        onClick={() => file.path.endsWith('.md') && onOpen(fullPath)}
+        onClick={() => isMarkdown && onOpen(fullPath)}
       >
         {name}
       </span>
+      {onDiff && isMarkdown && label !== 'U' && (
+        <button
+          className="git-action-btn git-action-diff"
+          title="Änderungen vergleichen"
+          onClick={() => onDiff(file.path)}
+        >
+          ⊞
+        </button>
+      )}
       {onRestore && (
         <button
           className="git-action-btn git-action-restore"
@@ -90,7 +103,7 @@ function FileRow({
 
 // ─── Main component ───────────────────────────────────────────────────────────
 
-export default function GitPanel({ vaultPath, onFileOpen, onCommit, onRestoreComplete }: GitPanelProps) {
+export default function GitPanel({ vaultPath, onFileOpen, onOpenDiff, onCommit, onRestoreComplete }: GitPanelProps) {
   const [status,        setStatus]        = useState<GitStatus | null>(null);
   const [commits,       setCommits]       = useState<GitCommit[]>([]);
   const [commitMsg,     setCommitMsg]     = useState('');
@@ -220,7 +233,7 @@ export default function GitPanel({ vaultPath, onFileOpen, onCommit, onRestoreCom
           <div className="git-empty-hint">Keine gestagten Änderungen</div>
         ) : staged.map(f => (
           <FileRow key={f.path} file={f} staged vaultPath={vaultPath}
-            onAction={unstageFile} onOpen={onFileOpen} />
+            onAction={unstageFile} onOpen={onFileOpen} onDiff={onOpenDiff} />
         ))}
       </div>
 
@@ -254,7 +267,7 @@ export default function GitPanel({ vaultPath, onFileOpen, onCommit, onRestoreCom
 
           {unstaged.map(f => (
             <FileRow key={f.path} file={f} staged={false} vaultPath={vaultPath}
-              onAction={stageFile} onOpen={onFileOpen} onRestore={restoreFile} />
+              onAction={stageFile} onOpen={onFileOpen} onDiff={onOpenDiff} onRestore={restoreFile} />
           ))}
           {untracked.map(f => (
             <FileRow key={f.path} file={f} staged={false} vaultPath={vaultPath}

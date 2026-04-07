@@ -34,6 +34,10 @@ import MarkdownEditor, { type MarkdownEditorHandle } from './editor/MarkdownEdit
 import OutlinePanel from './components/OutlinePanel';
 import GitPanel from './components/GitPanel';
 import TerminalPanel from './components/TerminalPanel';
+import DiffViewer from './components/DiffViewer';
+import ImageViewer from './components/ImageViewer';
+
+const IMAGE_EXTS = new Set(['png','jpg','jpeg','gif','webp','svg','bmp','ico','avif']);
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -65,6 +69,8 @@ export default function App() {
   const [sidebarTab, setSidebarTab]     = useState<'files' | 'git'>('files');
   const [outlineOpen, setOutlineOpen]   = useState(false);
   const [headContent, setHeadContent] = useState<string | null | undefined>(undefined);
+  const [activeDiff, setActiveDiff]   = useState<{ path: string; head: string | null; current: string } | null>(null);
+  const [activeImage, setActiveImage] = useState<string | null>(null);
   const [terminalOpen, setTerminalOpen]         = useState(false);
   const [terminalMounted, setTerminalMounted]   = useState(false);
   const [terminalPosition, setTerminalPosition] = useState<'bottom' | 'right'>('bottom');
@@ -133,6 +139,14 @@ export default function App() {
   const openNote = useCallback(async (rawTarget: string, anchor?: string, external?: boolean, fromLink?: boolean) => {
     if (external) {
       window.vaultApp.openExternal(rawTarget);
+      return;
+    }
+
+    // Image files → ImageViewer instead of editor
+    const ext = rawTarget.split('.').pop()?.toLowerCase() ?? '';
+    if (IMAGE_EXTS.has(ext)) {
+      setActiveImage(rawTarget);
+      setActiveDiff(null);
       return;
     }
 
@@ -335,6 +349,18 @@ export default function App() {
       });
     }
   }, []);
+
+  // ─── Open diff view ──────────────────────────────────────────────────────
+  const openDiff = useCallback(async (vaultRelPath: string) => {
+    if (!snapshot?.vaultPath) return;
+    const fullPath = `${snapshot.vaultPath}/${vaultRelPath}`;
+    const [head, note] = await Promise.all([
+      window.vaultApp.gitFileAtHead(fullPath),
+      window.vaultApp.openNote(fullPath).catch(() => null),
+    ]);
+    const current = tabs.find(t => t.path === fullPath)?.raw ?? note?.raw ?? '';
+    setActiveDiff({ path: fullPath, head, current });
+  }, [snapshot?.vaultPath, tabs]);
 
   // ─── Fetch HEAD content for git gutter ───────────────────────────────────
   useEffect(() => {
@@ -540,6 +566,7 @@ export default function App() {
           <GitPanel
             vaultPath={snapshot?.vaultPath ?? null}
             onFileOpen={openNote}
+            onOpenDiff={openDiff}
             onCommit={() => {
               if (activePath) window.vaultApp.gitFileAtHead(activePath).then(setHeadContent);
             }}
@@ -560,13 +587,37 @@ export default function App() {
         <TabBar
           tabs={tabs}
           activePath={activePath}
-          onActivate={setActivePath}
+          onActivate={p => { setActivePath(p); setActiveDiff(null); setActiveImage(null); }}
           onClose={closeTab}
         />
 
         <div className={`workspace-body workspace-body--${terminalOpen ? terminalPosition : 'bottom'}`}>
         <div className="editor-area">
-          {activeTab ? (
+          {activeImage && snapshot?.vaultPath ? (
+            <ImageViewer
+              path={activeImage}
+              vaultPath={snapshot.vaultPath}
+              onClose={() => setActiveImage(null)}
+            />
+          ) : activeDiff ? (
+            <DiffViewer
+              path={activeDiff.path}
+              headContent={activeDiff.head}
+              currentContent={activeDiff.current}
+              theme={settings.theme}
+              fontFamily={settings.editorFontFamily}
+              fontSize={settings.editorFontSize}
+              lineHeight={settings.editorLineHeight}
+              onSave={newContent => {
+                // Keep open tab in sync if the file is currently open
+                setTabs(prev => prev.map(t =>
+                  t.path === activeDiff.path ? { ...t, raw: newContent, dirty: false } : t
+                ));
+                setActiveDiff(d => d ? { ...d, current: newContent } : d);
+              }}
+              onClose={() => setActiveDiff(null)}
+            />
+          ) : activeTab ? (
             <>
               {/* Editor toolbar */}
               <div className="editor-toolbar">
@@ -653,7 +704,7 @@ export default function App() {
               )}
             </div>
           )}
-        </div>
+        </div>{/* activeImage / activeDiff / activeTab */}
 
         {/* ── Terminal panel ──────────────────────────────────────────── */}
         {terminalMounted && (

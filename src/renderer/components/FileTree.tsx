@@ -22,6 +22,13 @@ interface FileTreeProps {
   onDelete: (entry: VaultEntry) => void;
 }
 
+// ─── Helpers ─────────────────────────────────────────────────────────────────
+
+const IMAGE_EXTS = new Set(['png','jpg','jpeg','gif','webp','svg','bmp','ico','avif']);
+function isImageFile(name: string): boolean {
+  return IMAGE_EXTS.has((name.split('.').pop() ?? '').toLowerCase());
+}
+
 // ─── Tree node ────────────────────────────────────────────────────────────────
 
 interface NodeProps {
@@ -36,7 +43,8 @@ function TreeNode({ entry, depth, activePath, onOpen, onCtxMenu }: NodeProps) {
   const [open, setOpen] = useState(depth < 2);
 
   const indent = depth * 14;
-  const isFile = entry.kind === 'file';
+  const isFile  = entry.kind === 'file';
+  const isImage = isFile && isImageFile(entry.name);
   const isActive = entry.path === activePath;
 
   const handleClick = () => {
@@ -63,11 +71,13 @@ function TreeNode({ entry, depth, activePath, onOpen, onCtxMenu }: NodeProps) {
         {isFile && <span style={{ width: 16, display: 'inline-block' }} />}
 
         {/* Icon */}
-        <span className="tree-icon">{isFile ? '📄' : open ? '📂' : '📁'}</span>
+        <span className="tree-icon">
+          {!isFile ? (open ? '📂' : '📁') : isImage ? '🖼️' : '📄'}
+        </span>
 
         {/* Name */}
         <span className="tree-name">
-          {isFile ? entry.name.replace(/\.md$/, '') : entry.name}
+          {isImage ? entry.name : isFile ? entry.name.replace(/\.md$/, '') : entry.name}
         </span>
       </div>
 

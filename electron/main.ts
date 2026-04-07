@@ -29,6 +29,7 @@ let settings: AppSettings = { ...DEFAULT_SETTINGS };
 const noteCache = new Map<string, { raw: string; mtimeMs: number }>();
 
 const IGNORED_NAMES = new Set(['.git', '.obsidian', '.trash', 'node_modules', '.DS_Store']);
+const IMAGE_EXTS    = new Set(['.png', '.jpg', '.jpeg', '.gif', '.webp', '.svg', '.bmp', '.ico', '.avif']);
 const SETTINGS_FILE = path.join(app.getPath('userData'), 'settings.json');
 
 // ─── Settings ─────────────────────────────────────────────────────────────────
@@ -80,7 +81,7 @@ function buildTree(dir: string): VaultEntry[] {
         mtimeMs: 0,
         children: buildTree(fullPath),
       });
-    } else if (d.isFile() && d.name.endsWith('.md')) {
+    } else if (d.isFile() && (d.name.endsWith('.md') || IMAGE_EXTS.has(path.extname(d.name).toLowerCase()))) {
       let mtimeMs = 0;
       try { mtimeMs = fs.statSync(fullPath).mtimeMs; } catch { /* ignore */ }
       entries.push({ path: fullPath, name: d.name, kind: 'file', parentPath: dir, mtimeMs });
