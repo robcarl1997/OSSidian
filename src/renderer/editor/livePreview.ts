@@ -1,0 +1,393 @@
+/**
+ * Live-Preview Extension for CodeMirror 6
+ *
+ * Renders Markdown inline – headings, bold, italic, strikethrough, inline code,
+ * [[wikilinks]], and [markdown](links) – without a separate preview pane.
+ * Lines containing the cursor are shown as raw Markdown so the user can edit them.
+ */
+
+import {
+  Decoration,
+  DecorationSet,
+  EditorView,
+  ViewPlugin,
+  ViewUpdate,
+  WidgetType,
+} from '@codemirror/view';
+import { Facet, RangeSetBuilder } from '@codemirror/state';
+
+// ─── Configuration facet ──────────────────────────────────────────────────────
+
+export interface LivePreviewConfig {
+  allPaths: string[];
+  notePath: string;
+}
+
+export const livePreviewConfig = Facet.define<LivePreviewConfig, LivePreviewConfig>({
+  combine: vs => vs[0] ?? { allPaths: [], notePath: '' },
+});
+
+// ─── Helpers ──────────────────────────────────────────────────────────────────
+
+function stemFromPath(p: string): string {
+  const parts = p.replace(/\\/g, '/').split('/');
+  const file = parts[parts.length - 1] ?? '';
+  return file.replace(/\.md$/i, '').toLowerCase();
+}
+
+function noteExists(target: string, allPaths: string[]): boolean {
+  const needle = target.toLowerCase().trim();
+  return allPaths.some(p => stemFromPath(p) === needle);
+}
+
+/** Return the set of document line-numbers that contain at least one selection endpoint. */
+function activeLineNumbers(view: EditorView): Set<number> {
+  const lines = new Set<number>();
+  for (const { from, to } of view.state.selection.ranges) {
+    const startLine = view.state.doc.lineAt(from).number;
+    const endLine   = view.state.doc.lineAt(to).number;
+    for (let l = startLine; l <= endLine; l++) lines.add(l);
+  }
+  return lines;
+}
+
+// ─── Widgets ──────────────────────────────────────────────────────────────────
+
+class WikiLinkWidget extends WidgetType {
+  constructor(
+    readonly display: string,
+    readonly target: string,
+    readonly exists: boolean,
+  ) { super(); }
+
+  eq(other: WikiLinkWidget) {
+    return this.display === other.display && this.target === other.target && this.exists === other.exists;
+  }
+
+  toDOM(view: EditorView): HTMLElement {
+    const span = document.createElement('span');
+    span.className = this.exists ? 'cm-wiki-link' : 'cm-wiki-link cm-wiki-link-broken';
+    span.textContent = this.display;
+    span.title = this.exists ? this.target : `Notiz "${this.target}" existiert noch nicht`;
+    span.addEventListener('mousedown', e => {
+      e.preventDefault();
+      view.dom.dispatchEvent(new CustomEvent('obsidian:link-click', {
+        bubbles: true,
+        detail: { target: this.target, external: false },
+      }));
+    });
+    return span;
+  }
+}
+
+class ExtLinkWidget extends WidgetType {
+  constructor(readonly text: string, readonly href: string) { super(); }
+
+  eq(other: ExtLinkWidget) {
+    return this.text === other.text && this.href === other.href;
+  }
+
+  toDOM(view: EditorView): HTMLElement {
+    const span = document.createElement('span');
+    span.className = 'cm-ext-link';
+    span.textContent = this.text;
+    span.title = this.href;
+    span.addEventListener('mousedown', e => {
+      e.preventDefault();
+      view.dom.dispatchEvent(new CustomEvent('obsidian:link-click', {
+        bubbles: true,
+        detail: { target: this.href, external: true },
+      }));
+    });
+    return span;
+  }
+}
+
+class CheckboxWidget extends WidgetType {
+  constructor(readonly checked: boolean) { super(); }
+
+  eq(other: CheckboxWidget) { return this.checked === other.checked; }
+
+  toDOM(): HTMLElement {
+    const cb = document.createElement('input');
+    cb.type = 'checkbox';
+    cb.className = 'cm-task-checkbox';
+    cb.checked = this.checked;
+    cb.addEventListener('mousedown', e => e.preventDefault()); // handled by click
+    return cb;
+  }
+
+  ignoreEvent(e: Event) {
+    return e.type !== 'mousedown' && e.type !== 'click';
+  }
+}
+
+// ─── Decoration builder ───────────────────────────────────────────────────────
+
+interface Deco { from: number; to: number; value: Decoration }
+
+function buildDecorations(view: EditorView): DecorationSet {
+  const config = view.state.facet(livePreviewConfig);
+  const activeLines = activeLineNumbers(view);
+
+  // Collect raw (unsorted) decorations from all visible ranges
+  const raw: Deco[] = [];
+
+  for (const { from, to } of view.visibleRanges) {
+    let pos = from;
+    while (pos <= to) {
+      const line = view.state.doc.lineAt(pos);
+
+      if (!activeLines.has(line.number)) {
+        processLine(line.from, line.text, raw, config);
+      }
+
+      pos = line.to + 1;
+    }
+  }
+
+  // Sort by `from`, then by `to` ascending (inner before outer)
+  raw.sort((a, b) => a.from - b.from || a.to - b.to);
+
+  // Build the range set – skip overlapping replace decorations
+  const builder = new RangeSetBuilder<Decoration>();
+  let replaceEnd = -1;
+
+  for (const { from, to, value } of raw) {
+    const spec = value.spec as { widget?: WidgetType; replace?: boolean };
+    const isReplace = spec.widget !== undefined || spec.replace === true;
+
+    if (isReplace && from < replaceEnd) continue;   // skip overlapping replace
+    if (from > to) continue;                         // safety
+
+    try {
+      builder.add(from, to, value);
+      if (isReplace) replaceEnd = to;
+    } catch {
+      // silently skip if CodeMirror rejects (e.g. out-of-order edge case)
+    }
+  }
+
+  return builder.finish();
+}
+
+// ─── Per-line processing ──────────────────────────────────────────────────────
+
+function processLine(
+  lineFrom: number,
+  text: string,
+  out: Deco[],
+  config: LivePreviewConfig,
+): void {
+  // ── ATX Heading: # … ######
+  const headingM = text.match(/^(#{1,6})\s+(.+?)\s*(?:#{1,6}\s*)?$/);
+  if (headingM) {
+    const level = headingM[1].length;
+    const prefixLen = headingM[1].length + 1; // '# '
+    const contentStart = lineFrom + prefixLen;
+    const contentEnd   = lineFrom + text.length;
+
+    // Replace the '#…' prefix
+    pushReplace(out, lineFrom, lineFrom + prefixLen);
+    // Style the heading content
+    if (contentStart < contentEnd)
+      pushMark(out, contentStart, contentEnd, `cm-h${level}`);
+
+    return; // don't process inline patterns in headings
+  }
+
+  // ── Blockquote: > …
+  if (text.match(/^>\s?/)) {
+    const markEnd = lineFrom + (text.match(/^>\s?/)![0].length);
+    pushReplace(out, lineFrom, markEnd);
+    pushMark(out, markEnd, lineFrom + text.length, 'cm-blockquote');
+    return;
+  }
+
+  // ── Task list: - [ ] / - [x]
+  const taskM = text.match(/^(\s*[-*+]\s+)\[([ xX])\]\s/);
+  if (taskM) {
+    const checked = taskM[2].toLowerCase() === 'x';
+    const cbStart = lineFrom + taskM[1].length;
+    const cbEnd   = cbStart + taskM[2].length + 2; // '[ ]'
+    out.push({
+      from: cbStart,
+      to:   cbEnd,
+      value: Decoration.replace({ widget: new CheckboxWidget(checked) }),
+    });
+  }
+
+  // ── Inline patterns (no heading context)
+  processInline(lineFrom, text, out, config);
+}
+
+// Inline patterns – ordered from most-specific to least-specific
+const INLINE_PATTERNS: Array<{
+  re: RegExp;
+  handle: (m: RegExpExecArray, lineFrom: number, out: Deco[], config: LivePreviewConfig) => void;
+}> = [
+  // Bold + italic: ***text***
+  {
+    re: /\*{3}(.+?)\*{3}|_{3}(.+?)_{3}/g,
+    handle(m, lineFrom, out) {
+      const markerLen = 3;
+      pushReplace(out, lineFrom + m.index, lineFrom + m.index + markerLen);
+      const contentFrom = lineFrom + m.index + markerLen;
+      const contentTo   = lineFrom + m.index + m[0].length - markerLen;
+      if (contentFrom < contentTo) pushMark(out, contentFrom, contentTo, 'cm-strong cm-em');
+      pushReplace(out, contentTo, lineFrom + m.index + m[0].length);
+    },
+  },
+  // Bold: **text**
+  {
+    re: /\*{2}(.+?)\*{2}|_{2}(.+?)_{2}/g,
+    handle(m, lineFrom, out) {
+      const ml = 2;
+      pushReplace(out, lineFrom + m.index, lineFrom + m.index + ml);
+      const cf = lineFrom + m.index + ml;
+      const ct = lineFrom + m.index + m[0].length - ml;
+      if (cf < ct) pushMark(out, cf, ct, 'cm-strong');
+      pushReplace(out, ct, lineFrom + m.index + m[0].length);
+    },
+  },
+  // Italic: *text* or _text_ (not preceded/followed by another * or _)
+  {
+    re: /(?<!\*)\*(?!\*|s)(.+?)(?<!\*)\*(?!\*)|(?<!_)_(?!_)(.+?)(?<!_)_(?!_)/g,
+    handle(m, lineFrom, out) {
+      pushReplace(out, lineFrom + m.index, lineFrom + m.index + 1);
+      const cf = lineFrom + m.index + 1;
+      const ct = lineFrom + m.index + m[0].length - 1;
+      if (cf < ct) pushMark(out, cf, ct, 'cm-em');
+      pushReplace(out, ct, lineFrom + m.index + m[0].length);
+    },
+  },
+  // Strikethrough: ~~text~~
+  {
+    re: /~~(.+?)~~/g,
+    handle(m, lineFrom, out) {
+      pushReplace(out, lineFrom + m.index, lineFrom + m.index + 2);
+      const cf = lineFrom + m.index + 2;
+      const ct = lineFrom + m.index + m[0].length - 2;
+      if (cf < ct) pushMark(out, cf, ct, 'cm-strikethrough');
+      pushReplace(out, ct, lineFrom + m.index + m[0].length);
+    },
+  },
+  // Inline code: `code`
+  {
+    re: /`([^`]+)`/g,
+    handle(m, lineFrom, out) {
+      pushReplace(out, lineFrom + m.index, lineFrom + m.index + 1);
+      const cf = lineFrom + m.index + 1;
+      const ct = lineFrom + m.index + m[0].length - 1;
+      if (cf < ct) pushMark(out, cf, ct, 'cm-inline-code');
+      pushReplace(out, ct, lineFrom + m.index + m[0].length);
+    },
+  },
+  // Wikilinks: [[Note]] or [[Note|Alias]] or [[Note#anchor]]
+  {
+    re: /\[\[([^\]\r\n]+?)\]\]/g,
+    handle(m, lineFrom, out, config) {
+      const inner = m[1];
+      let target: string = inner;
+      let display: string = inner;
+
+      const pipeIdx = inner.indexOf('|');
+      const hashIdx = inner.indexOf('#');
+
+      if (pipeIdx !== -1) {
+        target  = inner.slice(0, pipeIdx).split('#')[0].trim();
+        display = inner.slice(pipeIdx + 1).trim();
+      } else if (hashIdx !== -1) {
+        target  = inner.slice(0, hashIdx).trim();
+        display = inner.trim();
+      } else {
+        target = display = inner.trim();
+      }
+
+      const exists = noteExists(target, config.allPaths);
+      out.push({
+        from:  lineFrom + m.index,
+        to:    lineFrom + m.index + m[0].length,
+        value: Decoration.replace({ widget: new WikiLinkWidget(display, target, exists) }),
+      });
+    },
+  },
+  // Markdown links: [text](url)
+  {
+    re: /\[([^\]]+)\]\(([^)]+)\)/g,
+    handle(m, lineFrom, out) {
+      const text = m[1];
+      const href = m[2];
+      const isExt = /^https?:\/\//.test(href);
+
+      out.push({
+        from:  lineFrom + m.index,
+        to:    lineFrom + m.index + m[0].length,
+        value: Decoration.replace({
+          widget: isExt
+            ? new ExtLinkWidget(text, href)
+            : new WikiLinkWidget(text, href.replace(/\.md$/, ''), false),
+        }),
+      });
+    },
+  },
+];
+
+function processInline(
+  lineFrom: number,
+  text: string,
+  out: Deco[],
+  config: LivePreviewConfig,
+): void {
+  // Track covered ranges to skip patterns that were already consumed
+  const covered: [number, number][] = [];
+
+  const overlaps = (from: number, to: number) =>
+    covered.some(([cf, ct]) => from < ct && to > cf);
+
+  for (const { re, handle } of INLINE_PATTERNS) {
+    re.lastIndex = 0;
+    let m: RegExpExecArray | null;
+
+    while ((m = re.exec(text)) !== null) {
+      const from = m.index;
+      const to   = m.index + m[0].length;
+
+      if (!overlaps(from, to)) {
+        handle(m, lineFrom, out, config);
+        covered.push([from, to]);
+      }
+    }
+  }
+}
+
+// ─── Small helpers ────────────────────────────────────────────────────────────
+
+function pushMark(out: Deco[], from: number, to: number, cls: string): void {
+  if (from >= to) return;
+  out.push({ from, to, value: Decoration.mark({ class: cls }) });
+}
+
+function pushReplace(out: Deco[], from: number, to: number): void {
+  if (from >= to) return;
+  out.push({ from, to, value: Decoration.replace({}) });
+}
+
+// ─── ViewPlugin ───────────────────────────────────────────────────────────────
+
+export const livePreviewPlugin = ViewPlugin.fromClass(
+  class {
+    decorations: DecorationSet;
+
+    constructor(view: EditorView) {
+      this.decorations = buildDecorations(view);
+    }
+
+    update(u: ViewUpdate) {
+      if (u.docChanged || u.viewportChanged || u.selectionSet || u.startState.facet(livePreviewConfig) !== u.state.facet(livePreviewConfig)) {
+        this.decorations = buildDecorations(u.view);
+      }
+    }
+  },
+  { decorations: v => v.decorations },
+);
