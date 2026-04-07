@@ -156,6 +156,42 @@ export default function App() {
     });
   }, [activePath]);
 
+  // ─── Tab navigation helpers ───────────────────────────────────────────────
+  const switchTab = useCallback((delta: number) => {
+    if (tabs.length === 0) return;
+    const idx = tabs.findIndex(t => t.path === activePath);
+    const next = tabs[(idx + delta + tabs.length) % tabs.length];
+    if (next) setActivePath(next.path);
+  }, [tabs, activePath]);
+
+  // ─── Global keyboard shortcuts + Vim app-event listeners ─────────────────
+  useEffect(() => {
+    const onTabNext  = () => switchTab(+1);
+    const onTabPrev  = () => switchTab(-1);
+    const onTabClose = () => { if (activePath) closeTab(activePath); };
+
+    const onKeyDown = (e: KeyboardEvent) => {
+      const ctrl = e.ctrlKey || e.metaKey;
+      if (ctrl && !e.shiftKey && e.key === 'Tab')  { e.preventDefault(); switchTab(+1); }
+      if (ctrl &&  e.shiftKey && e.key === 'Tab')  { e.preventDefault(); switchTab(-1); }
+      if (ctrl && e.key === 'PageDown')            { e.preventDefault(); switchTab(+1); }
+      if (ctrl && e.key === 'PageUp')              { e.preventDefault(); switchTab(-1); }
+      if (ctrl && e.key === 'w' && activePath)     { e.preventDefault(); closeTab(activePath); }
+    };
+
+    window.addEventListener('obsidian:tab-next',  onTabNext  as EventListener);
+    window.addEventListener('obsidian:tab-prev',  onTabPrev  as EventListener);
+    window.addEventListener('obsidian:tab-close', onTabClose as EventListener);
+    window.addEventListener('keydown', onKeyDown);
+
+    return () => {
+      window.removeEventListener('obsidian:tab-next',  onTabNext  as EventListener);
+      window.removeEventListener('obsidian:tab-prev',  onTabPrev  as EventListener);
+      window.removeEventListener('obsidian:tab-close', onTabClose as EventListener);
+      window.removeEventListener('keydown', onKeyDown);
+    };
+  }, [switchTab, activePath, closeTab]);
+
   // ─── Mark tab dirty ───────────────────────────────────────────────────────
   const markDirty = useCallback((path: string, raw: string) => {
     setTabs(prev =>

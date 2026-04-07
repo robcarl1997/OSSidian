@@ -1,5 +1,5 @@
 import { useEffect, useRef, useCallback } from 'react';
-import { EditorView, keymap, highlightActiveLine } from '@codemirror/view';
+import { EditorView, keymap, highlightActiveLine, drawSelection } from '@codemirror/view';
 import { EditorState, Compartment, Extension } from '@codemirror/state';
 import { defaultKeymap, history, historyKeymap, indentWithTab } from '@codemirror/commands';
 import { searchKeymap, search } from '@codemirror/search';
@@ -60,12 +60,89 @@ function applyVimBindings(bindings: VimKeybinding[]): void {
   }
 }
 
+// ─── Follow link under cursor (used by gd) ───────────────────────────────────
+
+function followLinkAtCursor(view: EditorView): void {
+  const pos  = view.state.selection.main.head;
+  const line = view.state.doc.lineAt(pos);
+  const col  = pos - line.from;
+  const text = line.text;
+
+  // Wikilinks: [[Note]], [[Note|Alias]], [[Note#anchor]]
+  const wikilinkRe = /\[\[([^\]\r\n]+?)\]\]/g;
+  let m: RegExpExecArray | null;
+  while ((m = wikilinkRe.exec(text)) !== null) {
+    if (col >= m.index && col <= m.index + m[0].length) {
+      const inner    = m[1];
+      const pipeIdx  = inner.indexOf('|');
+      const hashIdx  = inner.indexOf('#');
+      let target: string;
+      let anchor: string | undefined;
+      if (pipeIdx !== -1) {
+        target = inner.slice(0, pipeIdx).split('#')[0].trim();
+      } else if (hashIdx !== -1) {
+        target = inner.slice(0, hashIdx).trim();
+        anchor = inner.slice(hashIdx + 1).trim();
+      } else {
+        target = inner.trim();
+      }
+      const fullTarget = anchor ? `${target}#${anchor}` : target;
+      view.dom.dispatchEvent(new CustomEvent('obsidian:link-click', {
+        bubbles: true,
+        detail: { target: fullTarget, external: false },
+      }));
+      return;
+    }
+  }
+
+  // Markdown links: [text](url)
+  const mdLinkRe = /\[([^\]]+)\]\(([^)]+)\)/g;
+  while ((m = mdLinkRe.exec(text)) !== null) {
+    if (col >= m.index && col <= m.index + m[0].length) {
+      const href  = m[2];
+      const isExt = /^https?:\/\//.test(href);
+      view.dom.dispatchEvent(new CustomEvent('obsidian:link-click', {
+        bubbles: true,
+        detail: { target: isExt ? href : href.replace(/\.md$/, ''), external: isExt },
+      }));
+      return;
+    }
+  }
+}
+
+// ─── App-level Vim ex-commands (registered once; Vim is a global singleton) ──
+
+let appVimCommandsRegistered = false;
+
+function registerAppVimCommands(): void {
+  if (appVimCommandsRegistered) return;
+  appVimCommandsRegistered = true;
+
+  Vim.defineEx('tabnext', 'tabn', () => {
+    window.dispatchEvent(new CustomEvent('obsidian:tab-next'));
+  });
+  Vim.defineEx('tabprev', 'tabp', () => {
+    window.dispatchEvent(new CustomEvent('obsidian:tab-prev'));
+  });
+  Vim.defineEx('tabclose', 'tabc', () => {
+    window.dispatchEvent(new CustomEvent('obsidian:tab-close'));
+  });
+  Vim.defineEx('followlink', '', (cm: { cm6: EditorView }) => {
+    followLinkAtCursor(cm.cm6);
+  });
+
+  // Default normal-mode mappings (can be overridden via vimKeybindings settings)
+  Vim.map('gt', ':tabnext<CR>', 'normal');
+  Vim.map('gT', ':tabprev<CR>', 'normal');
+}
+
 // ─── Static base extensions ───────────────────────────────────────────────────
 
 const BASE_EXTENSIONS: Extension[] = [
   history(),
   search({ top: false }),
   highlightActiveLine(),
+  drawSelection(),
   EditorView.lineWrapping,
   markdown({ base: markdownLanguage }),
   keymap.of([...defaultKeymap, ...historyKeymap, ...searchKeymap, indentWithTab]),
@@ -143,9 +220,13 @@ export default function MarkdownEditor({
     const view = new EditorView({ state, parent: containerRef.current });
     viewRef.current = view;
     pathRef.current = doc.path;
+    view.focus();
 
-    // Apply vim keybindings
-    if (vimMode) applyVimBindings(vimKeybindings);
+    // Apply vim keybindings and register app ex-commands
+    if (vimMode) {
+      registerAppVimCommands();
+      applyVimBindings(vimKeybindings);
+    }
 
     return () => {
       view.destroy();
@@ -173,8 +254,12 @@ export default function MarkdownEditor({
     const view = viewRef.current;
     if (!view) return;
     view.dispatch({ effects: vimCompartment.reconfigure(vimMode ? vim() : []) });
-    if (vimMode) applyVimBindings(vimKeybindings);
-    else applyVimBindings([]);
+    if (vimMode) {
+      registerAppVimCommands();
+      applyVimBindings(vimKeybindings);
+    } else {
+      applyVimBindings([]);
+    }
   }, [vimMode, vimKeybindings]);
 
   // ── Reconfigure: live-preview / source mode ────────────────────────────────
