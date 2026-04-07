@@ -7,3 +7,4 @@
 - query
 - schönere bullet points
 - Bilder und weitere Anlagen hinzufügen
+- Allgemeine Shortcuts und mappings setzen können (unabh. von vim)
