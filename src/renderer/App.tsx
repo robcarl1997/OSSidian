@@ -33,6 +33,7 @@ import QuickOpen from './components/QuickOpen';
 import MarkdownEditor, { type MarkdownEditorHandle } from './editor/MarkdownEditor';
 import OutlinePanel from './components/OutlinePanel';
 import GitPanel from './components/GitPanel';
+import TerminalPanel from './components/TerminalPanel';
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -64,6 +65,10 @@ export default function App() {
   const [sidebarTab, setSidebarTab]     = useState<'files' | 'git'>('files');
   const [outlineOpen, setOutlineOpen]   = useState(false);
   const [headContent, setHeadContent] = useState<string | null | undefined>(undefined);
+  const [terminalOpen, setTerminalOpen]         = useState(false);
+  const [terminalPosition, setTerminalPosition] = useState<'bottom' | 'right'>('bottom');
+  const [terminalSize, setTerminalSize]         = useState(260);
+  const [editorSelection, setEditorSelection]   = useState<string>('');
   const activeCursorRef  = useRef<number>(0);
   const pendingCursors   = useRef(new Map<string, number>());
   const editorRef        = useRef<MarkdownEditorHandle>(null);
@@ -234,7 +239,8 @@ export default function App() {
           setDialog({ kind: 'create-file', parentPath: snapshot?.vaultPath ?? '' });
           setDialogInput('');
           break;
-        case 'openSettings':  setSettingsOpen(true); break;
+        case 'openSettings':   setSettingsOpen(true); break;
+        case 'toggleTerminal': setTerminalOpen(v => !v); break;
       }
     };
 
@@ -544,6 +550,7 @@ export default function App() {
           onClose={closeTab}
         />
 
+        <div className={`workspace-body workspace-body--${terminalOpen ? terminalPosition : 'bottom'}`}>
         <div className="editor-area">
           {activeTab ? (
             <>
@@ -608,6 +615,7 @@ export default function App() {
                   activeCursorRef.current = pos;
                   if (activePath) pendingCursors.current.set(activePath, pos);
                 }}
+                onSelectionChange={setEditorSelection}
                 onHeadingsChange={headings => {
                   setTabs(prev => prev.map(t =>
                     t.path === activeTab.path ? { ...t, headings } : t
@@ -632,6 +640,23 @@ export default function App() {
             </div>
           )}
         </div>
+
+        {/* ── Terminal panel ──────────────────────────────────────────── */}
+        {terminalOpen && (
+          <TerminalPanel
+            key={`terminal-${terminalPosition}`}
+            vaultPath={snapshot?.vaultPath ?? null}
+            activeFile={activePath}
+            selection={editorSelection}
+            theme={settings.theme}
+            position={terminalPosition}
+            size={terminalSize}
+            onSizeChange={setTerminalSize}
+            onPositionToggle={() => setTerminalPosition(p => p === 'bottom' ? 'right' : 'bottom')}
+            onClose={() => setTerminalOpen(false)}
+          />
+        )}
+        </div>{/* workspace-body */}
       </main>
 
       {/* ── Outline panel ───────────────────────────────────────────────── */}

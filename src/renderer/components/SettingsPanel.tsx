@@ -355,15 +355,16 @@ function MarkdownTab({
 // ─── App keybindings tab ──────────────────────────────────────────────────────
 
 const ACTION_LABELS: Record<AppAction, string> = {
-  quickOpen:     'Datei suchen (Quick Open)',
-  toggleSidebar: 'Seitenleiste umschalten',
-  toggleOutline: 'Gliederung umschalten',
-  tabNext:       'Nächster Tab',
-  tabPrev:       'Vorheriger Tab',
-  tabClose:      'Tab schließen',
-  jumpBack:      'Zurück navigieren',
-  newNote:       'Neue Notiz erstellen',
-  openSettings:  'Einstellungen öffnen',
+  quickOpen:      'Datei suchen (Quick Open)',
+  toggleSidebar:  'Seitenleiste umschalten',
+  toggleOutline:  'Gliederung umschalten',
+  tabNext:        'Nächster Tab',
+  tabPrev:        'Vorheriger Tab',
+  tabClose:       'Tab schließen',
+  jumpBack:       'Zurück navigieren',
+  newNote:        'Neue Notiz erstellen',
+  openSettings:   'Einstellungen öffnen',
+  toggleTerminal: 'Terminal umschalten',
 };
 
 const VIM_COMMANDS: Partial<Record<AppAction, string>> = {

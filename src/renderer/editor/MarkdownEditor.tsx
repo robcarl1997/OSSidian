@@ -41,6 +41,7 @@ export interface MarkdownEditorProps {
   onLinkClick: (target: string, external: boolean) => void;
   onHeadingsChange: (headings: NoteDocument['headings']) => void;
   onCursorChange?: (pos: number) => void;
+  onSelectionChange?: (text: string) => void;
   onPasteAttachment: (data: string, mimeType: string, filename: string) => Promise<string>;
   headContent?: string | null;
 }
@@ -337,6 +338,7 @@ const MarkdownEditor = forwardRef<MarkdownEditorHandle, MarkdownEditorProps>(fun
   onLinkClick,
   onHeadingsChange,
   onCursorChange,
+  onSelectionChange,
   onPasteAttachment,
   headContent,
 }: MarkdownEditorProps, ref) {
@@ -351,6 +353,7 @@ const MarkdownEditor = forwardRef<MarkdownEditorHandle, MarkdownEditorProps>(fun
   const onChangeRef              = useRef(onChange);
   const onLinkClickRef           = useRef(onLinkClick);
   const onCursorChangeRef        = useRef(onCursorChange);
+  const onSelectionChangeRef     = useRef(onSelectionChange);
   const onHeadingsChangeRef      = useRef(onHeadingsChange);
   const onPasteAttachmentRef     = useRef(onPasteAttachment);
   const linkFormatRef            = useRef(linkFormat);
@@ -365,6 +368,7 @@ const MarkdownEditor = forwardRef<MarkdownEditorHandle, MarkdownEditorProps>(fun
   useEffect(() => { onChangeRef.current = onChange; });
   useEffect(() => { onLinkClickRef.current = onLinkClick; });
   useEffect(() => { onCursorChangeRef.current = onCursorChange; });
+  useEffect(() => { onSelectionChangeRef.current = onSelectionChange; });
   useEffect(() => { onHeadingsChangeRef.current = onHeadingsChange; });
   useEffect(() => { onPasteAttachmentRef.current = onPasteAttachment; });
   useEffect(() => { linkFormatRef.current = linkFormat; }, [linkFormat]);
@@ -401,6 +405,12 @@ const MarkdownEditor = forwardRef<MarkdownEditorHandle, MarkdownEditorProps>(fun
       }
       if (update.selectionSet) {
         onCursorChangeRef.current?.(update.state.selection.main.head);
+        const sel = update.state.selection.main;
+        if (!sel.empty) {
+          onSelectionChangeRef.current?.(update.state.sliceDoc(sel.from, sel.to));
+        } else {
+          onSelectionChangeRef.current?.('');
+        }
       }
       // ── Slash command menu detection ──────────────────────────────────────
       if (update.docChanged || update.selectionSet) {

@@ -19,7 +19,8 @@ export type AppAction =
   | 'tabClose'
   | 'jumpBack'
   | 'newNote'
-  | 'openSettings';
+  | 'openSettings'
+  | 'toggleTerminal';
 
 export interface AppKeybinding {
   key: string;      // normalised combo, e.g. "Ctrl+P", "Ctrl+Shift+O"
@@ -64,6 +65,7 @@ export const DEFAULT_SETTINGS: AppSettings = {
     { key: 'Ctrl+Shift+Tab', action: 'tabPrev'        },
     { key: 'Ctrl+PageUp',    action: 'tabPrev'        },
     { key: 'Ctrl+W',         action: 'tabClose'       },
+    { key: 'Ctrl+`',         action: 'toggleTerminal' },
   ],
 };
 
@@ -178,9 +180,21 @@ export interface WindowControls {
   isMaximized(): Promise<boolean>;
 }
 
+// ─── Terminal ─────────────────────────────────────────────────────────────────
+
+export interface TerminalApi {
+  create(cols: number, rows: number, cwd: string, env?: Record<string, string>): Promise<number>;
+  write(pid: number, data: string): Promise<void>;
+  resize(pid: number, cols: number, rows: number): Promise<void>;
+  kill(pid: number): Promise<void>;
+  onData(cb: (pid: number, data: string) => void): () => void;
+  onExit(cb: (pid: number, code: number) => void): () => void;
+}
+
 declare global {
   interface Window {
     vaultApp: VaultApi;
     windowControls: WindowControls;
+    terminalApp: TerminalApi;
   }
 }

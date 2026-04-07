@@ -1,5 +1,5 @@
 import { contextBridge, ipcRenderer } from 'electron';
-import type { VaultApi, AppSettings, VaultChangeEvent, GitCommit } from '../shared/ipc';
+import type { VaultApi, AppSettings, VaultChangeEvent, GitCommit, TerminalApi } from '../shared/ipc';
 
 const api: VaultApi = {
   getInitialState: () =>
@@ -59,3 +59,22 @@ contextBridge.exposeInMainWorld('windowControls', {
   close:          () => ipcRenderer.invoke('window:close'),
   isMaximized:    (): Promise<boolean> => ipcRenderer.invoke('window:is-maximized'),
 });
+
+const terminalApi: TerminalApi = {
+  create:  (cols, rows, cwd, env) => ipcRenderer.invoke('terminal:create', cols, rows, cwd, env),
+  write:   (pid, data)            => ipcRenderer.invoke('terminal:write',  pid, data),
+  resize:  (pid, cols, rows)      => ipcRenderer.invoke('terminal:resize', pid, cols, rows),
+  kill:    (pid)                  => ipcRenderer.invoke('terminal:kill',   pid),
+  onData: (cb) => {
+    const handler = (_e: Electron.IpcRendererEvent, pid: number, data: string) => cb(pid, data);
+    ipcRenderer.on('terminal:data', handler);
+    return () => ipcRenderer.removeListener('terminal:data', handler);
+  },
+  onExit: (cb) => {
+    const handler = (_e: Electron.IpcRendererEvent, pid: number, code: number) => cb(pid, code);
+    ipcRenderer.on('terminal:exit', handler);
+    return () => ipcRenderer.removeListener('terminal:exit', handler);
+  },
+};
+
+contextBridge.exposeInMainWorld('terminalApp', terminalApi);

@@ -3,6 +3,7 @@ import * as fs from 'fs';
 import * as path from 'path';
 import chokidar from 'chokidar';
 import simpleGit from 'simple-git';
+import * as pty from 'node-pty';
 import type {
   AppSettings,
   VaultEntry,
@@ -410,6 +411,42 @@ function setupIPC(): void {
     } catch {
       return null; // new file not yet in HEAD
     }
+  });
+
+  // ── Terminal (node-pty) ──────────────────────────────────────────────────
+  const ptys = new Map<number, pty.IPty>();
+  const userShell = process.env.SHELL || (process.platform === 'win32' ? 'powershell.exe' : 'bash');
+
+  ipcMain.handle('terminal:create', async (_e, cols: number, rows: number, cwd: string, env?: Record<string, string>) => {
+    const ptyProcess = pty.spawn(userShell, [], {
+      name: 'xterm-256color',
+      cols: cols || 80,
+      rows: rows || 24,
+      cwd: cwd || (vaultPath ?? process.env.HOME ?? '/'),
+      env: { ...process.env, ...env } as Record<string, string>,
+    });
+    ptys.set(ptyProcess.pid, ptyProcess);
+    ptyProcess.onData(data => {
+      mainWindow?.webContents.send('terminal:data', ptyProcess.pid, data);
+    });
+    ptyProcess.onExit(({ exitCode }) => {
+      mainWindow?.webContents.send('terminal:exit', ptyProcess.pid, exitCode ?? 0);
+      ptys.delete(ptyProcess.pid);
+    });
+    return ptyProcess.pid;
+  });
+
+  ipcMain.handle('terminal:write', async (_e, pid: number, data: string) => {
+    ptys.get(pid)?.write(data);
+  });
+
+  ipcMain.handle('terminal:resize', async (_e, pid: number, cols: number, rows: number) => {
+    ptys.get(pid)?.resize(cols, rows);
+  });
+
+  ipcMain.handle('terminal:kill', async (_e, pid: number) => {
+    ptys.get(pid)?.kill();
+    ptys.delete(pid);
   });
 
   // ── Window controls ──────────────────────────────────────────────────────

@@ -1757,3 +1757,124 @@ body {
   color: var(--text-primary);
 }
 .git-confirm-actions { display: flex; gap: 4px; flex-shrink: 0; }
+
+/* ─── Workspace body (editor + terminal wrapper) ──────────────────────────── */
+
+.workspace-body {
+  flex: 1;
+  overflow: hidden;
+  display: flex;
+}
+
+.workspace-body--bottom { flex-direction: column; }
+.workspace-body--right  { flex-direction: row; }
+
+/* editor-area inside workspace-body still fills remaining space */
+.workspace-body .editor-area { flex: 1; min-width: 0; min-height: 0; }
+
+/* ─── Terminal panel ──────────────────────────────────────────────────────── */
+
+.terminal-panel {
+  display: flex;
+  flex-direction: column;
+  flex-shrink: 0;
+  background: var(--bg-app);
+}
+
+/* Bottom: border on top, full width */
+.terminal-panel--bottom {
+  border-top: 1px solid var(--border);
+  width: 100%;
+}
+
+/* Right: border on left, full height */
+.terminal-panel--right {
+  border-left: 1px solid var(--border);
+  height: 100%;
+}
+
+/* ─── Resize handles ─────────────────────────────────────────────────────── */
+
+.terminal-resize-handle {
+  flex-shrink: 0;
+  background: transparent;
+  transition: background 0.15s;
+}
+.terminal-resize-handle--bottom {
+  height: 4px;
+  cursor: row-resize;
+  width: 100%;
+}
+.terminal-resize-handle--right {
+  width: 4px;
+  cursor: col-resize;
+  height: 100%;
+  position: absolute;
+  left: 0;
+  top: 0;
+  bottom: 0;
+}
+.terminal-panel--right { position: relative; }
+.terminal-resize-handle:hover { background: color-mix(in srgb, var(--accent) 40%, transparent); }
+
+/* ─── Terminal header ────────────────────────────────────────────────────── */
+
+.terminal-header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 3px 10px;
+  background: var(--bg-sidebar);
+  border-bottom: 1px solid var(--border);
+  flex-shrink: 0;
+  user-select: none;
+}
+
+.terminal-title {
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--text-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+}
+
+.terminal-cwd {
+  font-size: 11px;
+  color: var(--accent);
+  opacity: 0.8;
+}
+
+.terminal-header-actions {
+  margin-left: auto;
+  display: flex;
+  align-items: center;
+  gap: 2px;
+}
+
+.terminal-header-btn {
+  background: none;
+  border: none;
+  color: var(--text-muted);
+  font-size: 12px;
+  cursor: pointer;
+  padding: 2px 5px;
+  border-radius: 3px;
+  line-height: 1;
+}
+.terminal-header-btn:hover {
+  color: var(--text-primary);
+  background: var(--bg-hover);
+}
+
+/* ─── Terminal container ─────────────────────────────────────────────────── */
+
+.terminal-container {
+  flex: 1;
+  overflow: hidden;
+  padding: 4px 8px;
+}
+
+/* xterm.js overrides */
+.terminal-container .xterm              { height: 100%; }
+.terminal-container .xterm-viewport     { background: transparent !important; }
+.terminal-container .xterm-screen       { background: transparent !important; }
