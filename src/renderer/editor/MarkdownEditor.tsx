@@ -1,11 +1,11 @@
 import { useEffect, useRef, useCallback } from 'react';
-import { EditorView, keymap, highlightActiveLine, drawSelection } from '@codemirror/view';
+import { EditorView, keymap, highlightActiveLine, drawSelection, gutter, GutterMarker } from '@codemirror/view';
 import { EditorState, Compartment, Extension } from '@codemirror/state';
 import { defaultKeymap, history, historyKeymap, indentWithTab } from '@codemirror/commands';
 import { searchKeymap, search } from '@codemirror/search';
 import { markdown, markdownLanguage } from '@codemirror/lang-markdown';
 import { vim, Vim } from '@replit/codemirror-vim';
-import { livePreviewPlugin, livePreviewConfig } from './livePreview';
+import { livePreviewPlugin, livePreviewBlockField, livePreviewConfig } from './livePreview';
 import { wikilinkAutocomplete, autocompleteConfig } from './linkAutocomplete';
 import type { NoteDocument, VimKeybinding } from '../../../shared/ipc';
 
@@ -16,15 +16,18 @@ export interface MarkdownEditorProps {
   editorMode: 'live-preview' | 'source';
   vimMode: boolean;
   vimKeybindings: VimKeybinding[];
+  vimLeader: string;
   fontFamily: string;
   fontSize: number;
   lineHeight: number;
   allPaths: string[];
   pendingAnchor: string | null;
+  initialCursor?: number;
   onSave: (raw: string) => void;
   onChange: (raw: string) => void;
   onLinkClick: (target: string, external: boolean) => void;
   onHeadingsChange: (headings: NoteDocument['headings']) => void;
+  onCursorChange?: (pos: number) => void;
 }
 
 // ─── Theme ───────────────────────────────────────────────────────────────────
@@ -45,17 +48,50 @@ const autocompleteCompartment = new Compartment();
 
 // ─── Vim keybinding helpers ───────────────────────────────────────────────────
 
-let appliedVimBindings: VimKeybinding[] = [];
+// Expand <leader> in a key sequence to the actual leader character using Vim notation.
+function expandLeader(lhs: string, leader: string): string {
+  if (!lhs.includes('<leader>') && !lhs.includes('<Leader>')) return lhs;
+  // Convert the leader character to a Vim key name if needed
+  const leaderKey = leader === ' ' ? '<Space>' : leader === '\t' ? '<Tab>' : leader;
+  return lhs.replace(/<[Ll]eader>/g, leaderKey);
+}
 
-function applyVimBindings(bindings: VimKeybinding[]): void {
-  // Remove previously applied bindings
-  for (const { lhs, mode } of appliedVimBindings) {
-    try { Vim.unmap(lhs, mode); } catch { /* ignore */ }
+// Track the *expanded* LHS so we can unmap correctly when leader changes.
+let appliedVimBindings: Array<VimKeybinding & { expandedLhs: string }> = [];
+// Track whether we removed the default <Space>→l binding (for space-as-leader).
+let spaceDefaultRemoved = false;
+
+function applyVimBindings(bindings: VimKeybinding[], leader: string): void {
+  // Unmap previously applied bindings using the expanded LHS that was registered
+  for (const { expandedLhs, mode } of appliedVimBindings) {
+    try { Vim.unmap(expandedLhs, mode); } catch { /* ignore */ }
   }
-  appliedVimBindings = [...bindings];
+  appliedVimBindings = [];
+
+  if (leader === ' ' && !spaceDefaultRemoved) {
+    // codemirror-vim's matchCommand picks a FULL match over partial matches.
+    // The default { keys: '<Space>', toKeys: 'l' } is a full match that fires
+    // immediately, preventing any '<Space>X' partial match from ever firing.
+    // Remove it so that pressing space can start a multi-key leader sequence.
+    try {
+      // The default mapping has no context (undefined), so pass undefined.
+      (Vim.unmap as (lhs: string, ctx: string | undefined) => void)('<Space>', undefined);
+      spaceDefaultRemoved = true;
+    } catch { /* ignore */ }
+  } else if (leader !== ' ' && spaceDefaultRemoved) {
+    // Restore default space→l behaviour for normal and visual mode.
+    try { Vim.map('<Space>', 'l', 'normal'); } catch { /* ignore */ }
+    try { Vim.map('<Space>', 'l', 'visual'); } catch { /* ignore */ }
+    spaceDefaultRemoved = false;
+  }
+
   for (const { lhs, rhs, mode } of bindings) {
-    try { Vim.map(lhs, rhs, mode); } catch (e) {
-      console.warn(`[vim] Failed to map ${lhs} → ${rhs} (${mode}):`, e);
+    const expandedLhs = expandLeader(lhs, leader);
+    try {
+      Vim.map(expandedLhs, rhs, mode);
+      appliedVimBindings.push({ lhs, rhs, mode, expandedLhs });
+    } catch (e) {
+      console.warn(`[vim] Failed to map ${expandedLhs} → ${rhs} (${mode}):`, e);
     }
   }
 }
@@ -136,11 +172,41 @@ function registerAppVimCommands(): void {
   Vim.defineEx('quickopen', 'qu', () => {
     window.dispatchEvent(new CustomEvent('obsidian:quick-open'));
   });
+  Vim.defineEx('sidebar', 'si', () => {
+    window.dispatchEvent(new CustomEvent('obsidian:toggle-sidebar'));
+  });
+  Vim.defineEx('outline', 'ou', () => {
+    window.dispatchEvent(new CustomEvent('obsidian:toggle-outline'));
+  });
 
   // Default normal-mode mappings (can be overridden via vimKeybindings settings)
   Vim.map('gt', ':tabnext<CR>', 'normal');
   Vim.map('gT', ':tabprev<CR>', 'normal');
 }
+
+// ─── Relative line numbers ────────────────────────────────────────────────────
+
+class RelLineNumberMarker extends GutterMarker {
+  constructor(readonly label: string, readonly isCurrent: boolean) { super(); }
+  get elementClass() { return this.isCurrent ? 'cm-rln-current' : ''; }
+  toDOM() { return document.createTextNode(this.label); }
+  eq(other: RelLineNumberMarker) {
+    return this.label === other.label && this.isCurrent === other.isCurrent;
+  }
+}
+
+const relativeLineNumbers = gutter({
+  class: 'cm-lineNumbers',
+  lineMarker(view, line) {
+    const lineNo     = view.state.doc.lineAt(line.from).number;
+    const cursorLine = view.state.doc.lineAt(view.state.selection.main.head).number;
+    const isCurrent  = lineNo === cursorLine;
+    const label      = isCurrent ? String(lineNo) : String(Math.abs(lineNo - cursorLine));
+    return new RelLineNumberMarker(label, isCurrent);
+  },
+  lineMarkerChange: (update) => update.selectionSet || update.docChanged,
+  renderEmptyElements: false,
+});
 
 // ─── Static base extensions ───────────────────────────────────────────────────
 
@@ -149,6 +215,7 @@ const BASE_EXTENSIONS: Extension[] = [
   search({ top: false }),
   highlightActiveLine(),
   drawSelection(),
+  relativeLineNumbers,
   EditorView.lineWrapping,
   markdown({ base: markdownLanguage }),
   keymap.of([...defaultKeymap, ...historyKeymap, ...searchKeymap, indentWithTab]),
@@ -162,15 +229,18 @@ export default function MarkdownEditor({
   editorMode,
   vimMode,
   vimKeybindings,
+  vimLeader,
   fontFamily,
   fontSize,
   lineHeight,
   allPaths,
   pendingAnchor,
+  initialCursor,
   onSave,
   onChange,
   onLinkClick,
   onHeadingsChange: _onHeadingsChange,
+  onCursorChange,
 }: MarkdownEditorProps) {
   const containerRef  = useRef<HTMLDivElement>(null);
   const viewRef       = useRef<EditorView | null>(null);
@@ -178,11 +248,13 @@ export default function MarkdownEditor({
   const onSaveRef     = useRef(onSave);
   const onChangeRef   = useRef(onChange);
   const onLinkClickRef = useRef(onLinkClick);
+  const onCursorChangeRef = useRef(onCursorChange);
 
   // Keep refs current
   useEffect(() => { onSaveRef.current = onSave; });
   useEffect(() => { onChangeRef.current = onChange; });
   useEffect(() => { onLinkClickRef.current = onLinkClick; });
+  useEffect(() => { onCursorChangeRef.current = onCursorChange; });
 
   // ── Create editor on mount ─────────────────────────────────────────────────
   useEffect(() => {
@@ -192,6 +264,9 @@ export default function MarkdownEditor({
       if (update.docChanged) {
         const raw = update.state.doc.toString();
         onChangeRef.current(raw);
+      }
+      if (update.selectionSet) {
+        onCursorChangeRef.current?.(update.state.selection.main.head);
       }
     });
 
@@ -213,7 +288,7 @@ export default function MarkdownEditor({
         vimCompartment.of(vimMode ? vim() : []),
         livePreviewCompartment.of(
           editorMode === 'live-preview'
-            ? [livePreviewPlugin, livePreviewConfig.of({ allPaths, notePath: doc.path })]
+            ? [livePreviewPlugin, livePreviewBlockField, livePreviewConfig.of({ allPaths, notePath: doc.path })]
             : [],
         ),
         autocompleteCompartment.of([
@@ -228,10 +303,15 @@ export default function MarkdownEditor({
     pathRef.current = doc.path;
     view.focus();
 
+    if (initialCursor) {
+      const pos = Math.min(initialCursor, state.doc.length);
+      view.dispatch({ selection: { anchor: pos }, scrollIntoView: true });
+    }
+
     // Apply vim keybindings and register app ex-commands
     if (vimMode) {
       registerAppVimCommands();
-      applyVimBindings(vimKeybindings);
+      applyVimBindings(vimKeybindings, vimLeader ?? '\\');
     }
 
     return () => {
@@ -262,11 +342,11 @@ export default function MarkdownEditor({
     view.dispatch({ effects: vimCompartment.reconfigure(vimMode ? vim() : []) });
     if (vimMode) {
       registerAppVimCommands();
-      applyVimBindings(vimKeybindings);
+      applyVimBindings(vimKeybindings, vimLeader ?? '\\');
     } else {
-      applyVimBindings([]);
+      applyVimBindings([], vimLeader ?? '\\');
     }
-  }, [vimMode, vimKeybindings]);
+  }, [vimMode, vimKeybindings, vimLeader]);
 
   // ── Reconfigure: live-preview / source mode ────────────────────────────────
   useEffect(() => {
@@ -275,7 +355,7 @@ export default function MarkdownEditor({
     view.dispatch({
       effects: livePreviewCompartment.reconfigure(
         editorMode === 'live-preview'
-          ? [livePreviewPlugin, livePreviewConfig.of({ allPaths, notePath: doc.path })]
+          ? [livePreviewPlugin, livePreviewBlockField, livePreviewConfig.of({ allPaths, notePath: doc.path })]
           : [],
       ),
     });

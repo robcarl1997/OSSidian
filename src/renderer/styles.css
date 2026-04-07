@@ -1216,3 +1216,156 @@ body {
   color: var(--text-faint);
   font-size: 13px;
 }
+
+/* ── Line numbers ─────────────────────────────────────────────────────────── */
+.cm-gutters {
+  background: transparent !important;
+  border-right: none !important;
+  padding-right: 8px;
+}
+.cm-lineNumbers .cm-gutterElement {
+  color: var(--text-faint);
+  font-size: 0.78em;
+  min-width: 2.8em;
+  text-align: right;
+  padding: 0 6px 0 0;
+  line-height: inherit;
+  font-family: ui-monospace, monospace;
+  user-select: none;
+}
+.cm-activeLineGutter {
+  background: transparent !important;
+}
+.cm-lineNumbers .cm-gutterElement.cm-rln-current {
+  color: var(--text-muted) !important;
+}
+
+/* ── Code blocks (per-line decoration approach) ───────────────────────────── */
+/* Fence lines (``` / ~~~) are collapsed so only the code content is visible */
+.cm-fence-line {
+  height: 0 !important;
+  min-height: 0 !important;
+  overflow: hidden !important;
+  padding-top: 0 !important;
+  padding-bottom: 0 !important;
+  border: none !important;
+}
+.cm-code-preview {
+  font-family: 'JetBrains Mono', 'Fira Code', ui-monospace, monospace !important;
+  background: var(--code-bg) !important;
+  font-size: 0.875em !important;
+  white-space: pre !important;
+  padding: 0 16px !important;
+  border-left: 1px solid var(--border) !important;
+  border-right: 1px solid var(--border) !important;
+}
+.cm-code-preview-first {
+  padding-top: 10px !important;
+  border-top: 1px solid var(--border) !important;
+  border-top-left-radius: 6px !important;
+  border-top-right-radius: 6px !important;
+}
+.cm-code-preview-last {
+  padding-bottom: 10px !important;
+  border-bottom: 1px solid var(--border) !important;
+  border-bottom-left-radius: 6px !important;
+  border-bottom-right-radius: 6px !important;
+}
+/* Language label on first code line */
+.cm-code-preview-first[data-lang]::before {
+  content: attr(data-lang);
+  display: block;
+  font-size: 11px;
+  color: var(--text-faint);
+  margin-bottom: 6px;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+
+/* ── Horizontal rules (--- / *** / ___) ──────────────────────────────────── */
+.cm-hr-line {
+  position: relative;
+  color: transparent !important;
+  user-select: none;
+  overflow: visible;
+}
+.cm-hr-line::before {
+  content: '';
+  position: absolute;
+  left: 0;
+  right: 0;
+  top: 50%;
+  height: 1px;
+  background: var(--border);
+}
+
+/* ── Markdown tables ──────────────────────────────────────────────────────── */
+.cm-md-table {
+  border-collapse: collapse;
+  margin: 6px 0;
+  font-size: inherit;
+  width: 100%;
+}
+.cm-md-table th, .cm-md-table td {
+  border: 1px solid var(--border);
+  padding: 5px 12px;
+  text-align: left;
+  vertical-align: top;
+}
+.cm-md-table th {
+  background: var(--bg-hover);
+  font-weight: 600;
+}
+
+/* ── Sidebar hidden ───────────────────────────────────────────────────────── */
+.app.sidebar-hidden .sidebar { display: none; }
+
+/* ── Outline panel ────────────────────────────────────────────────────────── */
+.outline-panel {
+  width: 220px;
+  min-width: 160px;
+  flex-shrink: 0;
+  display: flex;
+  flex-direction: column;
+  background: var(--bg-sidebar);
+  border-left: 1px solid var(--border);
+  overflow: hidden;
+}
+.outline-header {
+  padding: 10px 14px 8px;
+  font-size: 11px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--text-faint);
+  border-bottom: 1px solid var(--border);
+  flex-shrink: 0;
+}
+.outline-list {
+  overflow-y: auto;
+  flex: 1;
+  padding: 4px;
+}
+.outline-item {
+  display: block;
+  width: 100%;
+  text-align: left;
+  background: transparent;
+  border: none;
+  color: var(--text-muted);
+  font-size: 12.5px;
+  padding: 4px 8px;
+  border-radius: 4px;
+  cursor: pointer;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  line-height: 1.4;
+}
+.outline-item:hover { background: var(--bg-hover); color: var(--text-primary); }
+.outline-empty {
+  padding: 16px;
+  font-size: 12px;
+  color: var(--text-faint);
+  text-align: center;
+}

@@ -19,6 +19,7 @@ import FileTree from './components/FileTree';
 import SettingsPanel from './components/SettingsPanel';
 import QuickOpen from './components/QuickOpen';
 import MarkdownEditor from './editor/MarkdownEditor';
+import OutlinePanel from './components/OutlinePanel';
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -44,8 +45,12 @@ export default function App() {
   const [searchQuery, setSearchQuery]   = useState('');
   const [searchResults, setSearchResults] = useState<SearchResult[]>([]);
   const [pendingAnchor, setPendingAnchor] = useState<string | null>(null);
-  const [navHistory, setNavHistory]     = useState<string[]>([]);
+  const [navHistory, setNavHistory]     = useState<{ path: string; cursor: number }[]>([]);
   const [quickOpenOpen, setQuickOpenOpen] = useState(false);
+  const [sidebarOpen, setSidebarOpen]   = useState(true);
+  const [outlineOpen, setOutlineOpen]   = useState(false);
+  const activeCursorRef = useRef<number>(0);
+  const pendingCursors  = useRef(new Map<string, number>());
 
   const deferredSearch = useDeferredValue(searchQuery);
   const autosaveTimer  = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -121,7 +126,7 @@ export default function App() {
 
     // Push current position to history before navigating via a link
     if (fromLink && activePath && activePath !== filePath) {
-      setNavHistory(prev => [...prev, activePath]);
+      setNavHistory(prev => [...prev, { path: activePath, cursor: activeCursorRef.current }]);
     }
 
     // Check if already open
@@ -167,9 +172,10 @@ export default function App() {
   // ─── Jump back in navigation history ─────────────────────────────────────
   const jumpBack = useCallback(() => {
     if (navHistory.length === 0) return;
-    const prev = navHistory[navHistory.length - 1];
+    const entry = navHistory[navHistory.length - 1];
     setNavHistory(h => h.slice(0, -1));
-    openNote(prev);
+    pendingCursors.current.set(entry.path, entry.cursor);
+    openNote(entry.path);
   }, [navHistory, openNote]);
 
   // ─── Tab navigation helpers ───────────────────────────────────────────────
@@ -182,11 +188,13 @@ export default function App() {
 
   // ─── Global keyboard shortcuts + Vim app-event listeners ─────────────────
   useEffect(() => {
-    const onTabNext   = () => switchTab(+1);
-    const onTabPrev   = () => switchTab(-1);
-    const onTabClose  = () => { if (activePath) closeTab(activePath); };
-    const onJumpBack  = () => jumpBack();
-    const onQuickOpen = () => setQuickOpenOpen(true);
+    const onTabNext       = () => switchTab(+1);
+    const onTabPrev       = () => switchTab(-1);
+    const onTabClose      = () => { if (activePath) closeTab(activePath); };
+    const onJumpBack      = () => jumpBack();
+    const onQuickOpen     = () => setQuickOpenOpen(true);
+    const onToggleSidebar = () => setSidebarOpen(v => !v);
+    const onToggleOutline = () => setOutlineOpen(v => !v);
 
     const onKeyDown = (e: KeyboardEvent) => {
       const ctrl = e.ctrlKey || e.metaKey;
@@ -196,24 +204,29 @@ export default function App() {
       if (ctrl && e.key === 'PageUp')              { e.preventDefault(); switchTab(-1); }
       if (ctrl && e.key === 'w' && activePath)     { e.preventDefault(); closeTab(activePath); }
       if (ctrl && e.key === 'p')                   { e.preventDefault(); setQuickOpenOpen(true); }
+      if (ctrl && e.key === 'b')                   { e.preventDefault(); setSidebarOpen(v => !v); }
     };
 
-    window.addEventListener('obsidian:tab-next',  onTabNext   as EventListener);
-    window.addEventListener('obsidian:tab-prev',  onTabPrev   as EventListener);
-    window.addEventListener('obsidian:tab-close', onTabClose  as EventListener);
-    window.addEventListener('obsidian:jump-back', onJumpBack  as EventListener);
-    window.addEventListener('obsidian:quick-open', onQuickOpen as EventListener);
+    window.addEventListener('obsidian:tab-next',       onTabNext       as EventListener);
+    window.addEventListener('obsidian:tab-prev',       onTabPrev       as EventListener);
+    window.addEventListener('obsidian:tab-close',      onTabClose      as EventListener);
+    window.addEventListener('obsidian:jump-back',      onJumpBack      as EventListener);
+    window.addEventListener('obsidian:quick-open',     onQuickOpen     as EventListener);
+    window.addEventListener('obsidian:toggle-sidebar', onToggleSidebar as EventListener);
+    window.addEventListener('obsidian:toggle-outline', onToggleOutline as EventListener);
     window.addEventListener('keydown', onKeyDown);
 
     return () => {
-      window.removeEventListener('obsidian:tab-next',  onTabNext   as EventListener);
-      window.removeEventListener('obsidian:tab-prev',  onTabPrev   as EventListener);
-      window.removeEventListener('obsidian:tab-close', onTabClose  as EventListener);
-      window.removeEventListener('obsidian:jump-back', onJumpBack  as EventListener);
-      window.removeEventListener('obsidian:quick-open', onQuickOpen as EventListener);
+      window.removeEventListener('obsidian:tab-next',       onTabNext       as EventListener);
+      window.removeEventListener('obsidian:tab-prev',       onTabPrev       as EventListener);
+      window.removeEventListener('obsidian:tab-close',      onTabClose      as EventListener);
+      window.removeEventListener('obsidian:jump-back',      onJumpBack      as EventListener);
+      window.removeEventListener('obsidian:quick-open',     onQuickOpen     as EventListener);
+      window.removeEventListener('obsidian:toggle-sidebar', onToggleSidebar as EventListener);
+      window.removeEventListener('obsidian:toggle-outline', onToggleOutline as EventListener);
       window.removeEventListener('keydown', onKeyDown);
     };
-  }, [switchTab, activePath, closeTab, jumpBack]);
+  }, [switchTab, activePath, closeTab, jumpBack, setSidebarOpen, setOutlineOpen]);
 
   // ─── Mark tab dirty ───────────────────────────────────────────────────────
   const markDirty = useCallback((path: string, raw: string) => {
@@ -251,6 +264,26 @@ export default function App() {
     const updated = await window.vaultApp.updateSettings(partial);
     setSnapshot(prev => prev ? { ...prev, settings: updated } : prev);
   }, []);
+
+  // ─── Zoom (Ctrl+/Ctrl-/Ctrl+0) ───────────────────────────────────────────
+  useEffect(() => {
+    const handler = (e: KeyboardEvent) => {
+      const ctrl = e.ctrlKey || e.metaKey;
+      if (!ctrl) return;
+      if (e.key === '=' || e.key === '+') {
+        e.preventDefault();
+        handleSettingsSave({ editorFontSize: Math.min(28, settings.editorFontSize + 1) });
+      } else if (e.key === '-') {
+        e.preventDefault();
+        handleSettingsSave({ editorFontSize: Math.max(12, settings.editorFontSize - 1) });
+      } else if (e.key === '0') {
+        e.preventDefault();
+        handleSettingsSave({ editorFontSize: 17 });
+      }
+    };
+    window.addEventListener('keydown', handler);
+    return () => window.removeEventListener('keydown', handler);
+  }, [settings.editorFontSize, handleSettingsSave]);
 
   // ─── Vault select ─────────────────────────────────────────────────────────
   const selectVault = useCallback(async () => {
@@ -313,7 +346,7 @@ export default function App() {
 
   // ─── Render ───────────────────────────────────────────────────────────────
   return (
-    <div className="app">
+    <div className={`app${sidebarOpen ? '' : ' sidebar-hidden'}`}>
       {/* ── Sidebar ──────────────────────────────────────────────────────── */}
       <aside className="sidebar">
         {/* Header */}
@@ -441,14 +474,17 @@ export default function App() {
                 editorMode={settings.editorMode}
                 vimMode={settings.vimMode}
                 vimKeybindings={settings.vimKeybindings}
+                vimLeader={settings.vimLeader ?? '\\'}
                 fontFamily={settings.editorFontFamily}
                 fontSize={settings.editorFontSize}
                 lineHeight={settings.editorLineHeight}
                 allPaths={snapshot?.allPaths ?? []}
                 pendingAnchor={pendingAnchor}
+                initialCursor={pendingCursors.current.get(activeTab.path)}
                 onSave={handleEditorSave}
                 onChange={handleEditorChange}
                 onLinkClick={handleLinkClick}
+                onCursorChange={(pos) => { activeCursorRef.current = pos; }}
                 onHeadingsChange={headings => {
                   setTabs(prev => prev.map(t =>
                     t.path === activeTab.path ? { ...t, headings } : t
@@ -476,6 +512,14 @@ export default function App() {
           )}
         </div>
       </main>
+
+      {/* ── Outline panel ───────────────────────────────────────────────── */}
+      {outlineOpen && activeTab && (
+        <OutlinePanel
+          headings={activeTab.headings}
+          onJumpTo={(slug) => setPendingAnchor(slug)}
+        />
+      )}
 
       {/* ── Quick Open ──────────────────────────────────────────────────── */}
       {quickOpenOpen && (

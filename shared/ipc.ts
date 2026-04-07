@@ -21,6 +21,7 @@ export interface AppSettings {
   editorFontSize: number;      // 12–28
   editorLineHeight: number;    // 1.0–2.5
   vimKeybindings: VimKeybinding[];
+  vimLeader: string;
 }
 
 export const DEFAULT_SETTINGS: AppSettings = {
@@ -34,6 +35,7 @@ export const DEFAULT_SETTINGS: AppSettings = {
   editorFontSize: 17,
   editorLineHeight: 1.75,
   vimKeybindings: [],
+  vimLeader: '\\',
 };
 
 // ─── Vault ───────────────────────────────────────────────────────────────────

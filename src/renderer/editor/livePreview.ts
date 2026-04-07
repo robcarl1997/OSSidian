@@ -14,7 +14,7 @@ import {
   ViewUpdate,
   WidgetType,
 } from '@codemirror/view';
-import { Facet, RangeSetBuilder } from '@codemirror/state';
+import { EditorState, Facet, RangeSetBuilder, StateField } from '@codemirror/state';
 
 // ─── Configuration facet ──────────────────────────────────────────────────────
 
@@ -51,7 +51,156 @@ function activeLineNumbers(view: EditorView): Set<number> {
   return lines;
 }
 
+// ─── Block decorations (StateField — required for block: true) ────────────────
+
+function buildBlockDecorations(state: EditorState): DecorationSet {
+  const cursorLineNo = state.doc.lineAt(state.selection.main.head).number;
+  const items: { from: number; to: number; value: Decoration }[] = [];
+
+  let pos = 0;
+  while (pos <= state.doc.length) {
+    const line = state.doc.lineAt(pos);
+
+    // ── Fenced code block: ``` or ~~~
+    // Uses per-line Decoration.line (no block:true) so cursor can navigate into
+    // fence lines and trigger un-render without atomic-range skip issues.
+    const fenceM = line.text.match(/^(`{3,}|~{3,})(\S*)/);
+    if (fenceM) {
+      const fence     = fenceM[1] ?? '```';
+      const lang      = fenceM[2] ?? '';
+      const startNo   = line.number;
+      let   endNo     = -1;
+      let   searchPos = line.to + 1;
+
+      while (searchPos <= state.doc.length) {
+        const inner = state.doc.lineAt(searchPos);
+        if (inner.text.startsWith(fence)) { endNo = inner.number; break; }
+        searchPos = inner.to + 1;
+      }
+
+      if (endNo !== -1) {
+        const hasCursor = cursorLineNo >= startNo && cursorLineNo <= endNo;
+        if (!hasCursor) {
+          // Hide opening fence
+          items.push({ from: line.from, to: line.from,
+            value: Decoration.line({ class: 'cm-fence-line' }) });
+          // Style each code content line
+          for (let n = startNo + 1; n < endNo; n++) {
+            const cl      = state.doc.line(n);
+            const isFirst = n === startNo + 1;
+            const isLast  = n === endNo - 1;
+            const cls = ['cm-code-preview',
+              isFirst ? 'cm-code-preview-first' : '',
+              isLast  ? 'cm-code-preview-last'  : '',
+            ].filter(Boolean).join(' ');
+            const deco = (lang && isFirst)
+              ? Decoration.line({ class: cls, attributes: { 'data-lang': lang } })
+              : Decoration.line({ class: cls });
+            items.push({ from: cl.from, to: cl.from, value: deco });
+          }
+          // Hide closing fence
+          const closeLine = state.doc.line(endNo);
+          items.push({ from: closeLine.from, to: closeLine.from,
+            value: Decoration.line({ class: 'cm-fence-line' }) });
+        }
+        pos = state.doc.line(endNo).to + 1;
+        continue;
+      }
+    }
+
+    // ── Horizontal rule: ---, ***, or ___ (3+, optional spaces between)
+    if (/^(\s*)([-*_])\s*\2\s*\2[\s\2]*$/.test(line.text) && line.text.trim().length >= 3) {
+      const hasCursor = cursorLineNo === line.number;
+      if (!hasCursor) {
+        items.push({ from: line.from, to: line.from,
+          value: Decoration.line({ class: 'cm-hr-line' }) });
+      }
+      pos = line.to + 1;
+      continue;
+    }
+
+    // ── Markdown table: consecutive lines matching /^\|.*\|/
+    // Keeps block widget but uses cursorLineNo <= tableEndNo + 1 to handle
+    // column-preserving ArrowDown that jumps to the line after the table.
+    if (/^\|.*\|/.test(line.text)) {
+      const tableStartNo = line.number;
+      const tableLines   = [line.text];
+      let   searchPos    = line.to + 1;
+
+      while (searchPos <= state.doc.length) {
+        const inner = state.doc.lineAt(searchPos);
+        if (!/^\|.*\|/.test(inner.text)) break;
+        tableLines.push(inner.text);
+        searchPos = inner.to + 1;
+      }
+      const tableEndNo = tableStartNo + tableLines.length - 1;
+
+      if (tableLines.length >= 2) {
+        const hasCursor = cursorLineNo >= tableStartNo && cursorLineNo <= tableEndNo + 1;
+        if (!hasCursor) {
+          const rows: string[][] = [];
+          for (const tl of tableLines) {
+            const cells = tl.replace(/^\||\|$/g, '').split('|').map(c => c.trim());
+            if (!cells.every(c => /^[-: ]+$/.test(c))) rows.push(cells);
+          }
+          if (rows.length >= 1) {
+            items.push({
+              from:  line.from,
+              to:    state.doc.line(tableEndNo).to,
+              value: Decoration.replace({ widget: new TableWidget(rows), block: true }),
+            });
+            pos = state.doc.line(tableEndNo).to + 1;
+            continue;
+          }
+        }
+      }
+    }
+
+    pos = line.to + 1;
+  }
+
+  items.sort((a, b) => a.from - b.from || a.to - b.to);
+  const builder = new RangeSetBuilder<Decoration>();
+  let end = -1;
+  for (const { from, to, value } of items) {
+    if (from < end) continue;
+    try { builder.add(from, to, value); end = Math.max(end, to); } catch { /* skip */ }
+  }
+  return builder.finish();
+}
+
+export const livePreviewBlockField = StateField.define<DecorationSet>({
+  create: (state) => buildBlockDecorations(state),
+  update: (value, tr) => {
+    // tr.selectionSet may not be set by all Vim-mode movements; also compare
+    // cursor positions directly so we never miss a cursor change.
+    const cursorMoved = tr.state.selection.main.head !== tr.startState.selection.main.head;
+    if (tr.docChanged || tr.selectionSet || cursorMoved) return buildBlockDecorations(tr.state);
+    return value;
+  },
+  provide: f => EditorView.decorations.from(f),
+});
+
 // ─── Widgets ──────────────────────────────────────────────────────────────────
+
+class TableWidget extends WidgetType {
+  constructor(readonly rows: string[][]) { super(); }
+  eq(other: TableWidget) { return JSON.stringify(this.rows) === JSON.stringify(other.rows); }
+  ignoreEvent() { return false; }
+  toDOM(): HTMLElement {
+    const table = document.createElement('table');
+    table.className = 'cm-md-table';
+    this.rows.forEach((cells, i) => {
+      const tr = table.insertRow();
+      cells.forEach(cell => {
+        const el = document.createElement(i === 0 ? 'th' : 'td');
+        el.textContent = cell;
+        tr.appendChild(el);
+      });
+    });
+    return table;
+  }
+}
 
 class WikiLinkWidget extends WidgetType {
   constructor(
@@ -127,45 +276,35 @@ class CheckboxWidget extends WidgetType {
 interface Deco { from: number; to: number; value: Decoration }
 
 function buildDecorations(view: EditorView): DecorationSet {
-  const config = view.state.facet(livePreviewConfig);
+  const config      = view.state.facet(livePreviewConfig);
   const activeLines = activeLineNumbers(view);
-
-  // Collect raw (unsorted) decorations from all visible ranges
   const raw: Deco[] = [];
 
   for (const { from, to } of view.visibleRanges) {
     let pos = from;
     while (pos <= to) {
       const line = view.state.doc.lineAt(pos);
-
       if (!activeLines.has(line.number)) {
         processLine(line.from, line.text, raw, config);
       }
-
       pos = line.to + 1;
     }
   }
 
-  // Sort by `from`, then by `to` ascending (inner before outer)
   raw.sort((a, b) => a.from - b.from || a.to - b.to);
 
-  // Build the range set – skip overlapping replace decorations
   const builder = new RangeSetBuilder<Decoration>();
   let replaceEnd = -1;
 
   for (const { from, to, value } of raw) {
     const spec = value.spec as { widget?: WidgetType; replace?: boolean };
     const isReplace = spec.widget !== undefined || spec.replace === true;
-
-    if (isReplace && from < replaceEnd) continue;   // skip overlapping replace
-    if (from > to) continue;                         // safety
-
+    if (isReplace && from < replaceEnd) continue;
+    if (from > to) continue;
     try {
       builder.add(from, to, value);
       if (isReplace) replaceEnd = to;
-    } catch {
-      // silently skip if CodeMirror rejects (e.g. out-of-order edge case)
-    }
+    } catch { /* skip */ }
   }
 
   return builder.finish();

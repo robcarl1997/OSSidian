@@ -135,6 +135,17 @@ function VimTab({
 }) {
   const vimMode      = local.vimMode ?? false;
   const keybindings  = (local.vimKeybindings ?? []) as VimKeybinding[];
+  const vimLeader    = local.vimLeader ?? '\\';
+
+  // Display helpers for leader key: space → '<Space>', tab → '<Tab>'
+  const leaderDisplay = vimLeader === ' ' ? '<Space>' : vimLeader === '\t' ? '<Tab>' : vimLeader;
+  const handleLeaderChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const raw = e.target.value;
+    const val = raw.toLowerCase() === '<space>' ? ' '
+              : raw.toLowerCase() === '<tab>'   ? '\t'
+              : raw;
+    setLocal(l => ({ ...l, vimLeader: val }));
+  };
 
   const addBinding = () =>
     setLocal(l => ({
@@ -166,6 +177,25 @@ function VimTab({
           <Toggle checked={vimMode} onChange={v => setLocal(l => ({ ...l, vimMode: v }))} />
         </div>
       </div>
+
+      {vimMode && (
+        <div className="settings-section">
+          <div className="settings-section-title">Vim-Einstellungen</div>
+          <div className="settings-row">
+            <div className="settings-label">
+              Leader-Taste
+              <small>Wird als &lt;leader&gt; in Mappings verwendet</small>
+            </div>
+            <input
+              className="kb-input"
+              style={{ width: 80 }}
+              value={leaderDisplay}
+              onChange={handleLeaderChange}
+              placeholder="\"
+            />
+          </div>
+        </div>
+      )}
 
       {vimMode && (
         <div className="settings-section">
