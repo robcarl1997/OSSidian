@@ -1420,6 +1420,21 @@ body {
   text-align: center;
 }
 
+/* ── List decorations ─────────────────────────────────────────────────────── */
+.cm-bullet-marker {
+  color: var(--text-muted);
+  margin-right: 0.35em;
+  font-size: 1.1em;
+  line-height: 1;
+  vertical-align: middle;
+}
+.cm-list-number {
+  color: var(--text-muted);
+  margin-right: 0.35em;
+  font-variant-numeric: tabular-nums;
+  font-size: 0.9em;
+}
+
 /* ── Slash command menu ────────────────────────────────────────────────────── */
 .slash-menu {
   min-width: 220px;

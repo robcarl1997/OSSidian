@@ -252,6 +252,29 @@ class ExtLinkWidget extends WidgetType {
   }
 }
 
+class BulletWidget extends WidgetType {
+  eq(_o: BulletWidget) { return true; }
+  toDOM(): HTMLElement {
+    const s = document.createElement('span');
+    s.className = 'cm-bullet-marker';
+    s.textContent = '•';
+    return s;
+  }
+  ignoreEvent() { return true; }
+}
+
+class NumberWidget extends WidgetType {
+  constructor(readonly num: string) { super(); }
+  eq(o: NumberWidget) { return this.num === o.num; }
+  toDOM(): HTMLElement {
+    const s = document.createElement('span');
+    s.className = 'cm-list-number';
+    s.textContent = this.num + '.';
+    return s;
+  }
+  ignoreEvent() { return true; }
+}
+
 class CheckboxWidget extends WidgetType {
   constructor(readonly checked: boolean) { super(); }
 
@@ -343,17 +366,39 @@ function processLine(
     return;
   }
 
-  // ── Task list: - [ ] / - [x]
-  const taskM = text.match(/^(\s*[-*+]\s+)\[([ xX])\]\s/);
+  // ── Task list: - [ ] / - [x]  (check before regular bullets)
+  const taskM = text.match(/^(\s*)([-*+])(\s+)\[([ xX])\]/);
   if (taskM) {
-    const checked = taskM[2].toLowerCase() === 'x';
-    const cbStart = lineFrom + taskM[1].length;
-    const cbEnd   = cbStart + taskM[2].length + 2; // '[ ]'
-    out.push({
-      from: cbStart,
-      to:   cbEnd,
-      value: Decoration.replace({ widget: new CheckboxWidget(checked) }),
-    });
+    const markerStart = lineFrom + taskM[1].length;
+    const markerEnd   = markerStart + taskM[2].length + taskM[3].length; // "-" + " "
+    pushReplace(out, markerStart, markerEnd); // hide "- "
+    const cbStart = markerEnd;
+    const cbEnd   = cbStart + 3;             // "[ ]" = 3 chars
+    out.push({ from: cbStart, to: cbEnd,
+      value: Decoration.replace({ widget: new CheckboxWidget(taskM[4].toLowerCase() === 'x') }) });
+    processInline(lineFrom, text, out, config);
+    return;
+  }
+
+  // ── Unordered bullet: - item  * item  + item
+  const bulletM = text.match(/^(\s*)([-*+]) /);
+  if (bulletM) {
+    const markerStart = lineFrom + bulletM[1].length;
+    out.push({ from: markerStart, to: markerStart + 2,   // "- "
+      value: Decoration.replace({ widget: new BulletWidget() }) });
+    processInline(lineFrom, text, out, config);
+    return;
+  }
+
+  // ── Ordered list: 1. item
+  const numberedM = text.match(/^(\s*)(\d+)\. /);
+  if (numberedM) {
+    const markerStart = lineFrom + numberedM[1].length;
+    const markerEnd   = lineFrom + numberedM[0].length;  // after "1. "
+    out.push({ from: markerStart, to: markerEnd,
+      value: Decoration.replace({ widget: new NumberWidget(numberedM[2]) }) });
+    processInline(lineFrom, text, out, config);
+    return;
   }
 
   // ── Inline patterns (no heading context)

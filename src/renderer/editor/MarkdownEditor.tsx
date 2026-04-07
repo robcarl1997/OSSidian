@@ -1,6 +1,6 @@
 import { useEffect, useRef, useCallback, forwardRef, useImperativeHandle, useState, useMemo } from 'react';
 import { EditorView, keymap, highlightActiveLine, drawSelection, gutter, GutterMarker } from '@codemirror/view';
-import { EditorState, Compartment, Extension } from '@codemirror/state';
+import { EditorState, Compartment, Extension, Prec } from '@codemirror/state';
 import { defaultKeymap, history, historyKeymap, indentWithTab } from '@codemirror/commands';
 import { searchKeymap, search } from '@codemirror/search';
 import { markdown, markdownLanguage } from '@codemirror/lang-markdown';
@@ -235,9 +235,70 @@ const relativeLineNumbers = gutter({
   renderEmptyElements: false,
 });
 
+// ─── List continuation (Prec.highest so it runs before markdownKeymap) ───────
+
+const listContinuationKeymap = Prec.highest(keymap.of([{
+  key: 'Enter',
+  run(view) {
+    const sel = view.state.selection.main;
+    if (!sel.empty) return false;
+    const line = view.state.doc.lineAt(sel.from);
+    const text = line.text;
+
+    // Task list: - [ ] text  (check before bullet so "- [ ]" isn't treated as bullet)
+    const taskM = text.match(/^(\s*)([-*+])(\s+)\[([ xX])\]\s*/);
+    if (taskM) {
+      const prefix = taskM[1] + taskM[2] + taskM[3]; // e.g. "- "
+      const contentStart = line.from + prefix.length + 4; // after "[ ] "
+      if (sel.from <= contentStart) {
+        view.dispatch({ changes: { from: line.from, to: line.to, insert: '' },
+          selection: { anchor: line.from } });
+      } else {
+        const cont = prefix + '[ ] ';
+        view.dispatch({ changes: { from: sel.from, insert: '\n' + cont },
+          selection: { anchor: sel.from + 1 + cont.length } });
+      }
+      return true;
+    }
+
+    // Unordered bullet: - item  * item  + item
+    const bulletM = text.match(/^(\s*)([-*+]) /);
+    if (bulletM) {
+      const prefix = bulletM[1] + bulletM[2] + ' ';
+      const contentStart = line.from + prefix.length;
+      if (sel.from <= contentStart) {
+        view.dispatch({ changes: { from: line.from, to: line.to, insert: '' },
+          selection: { anchor: line.from } });
+      } else {
+        view.dispatch({ changes: { from: sel.from, insert: '\n' + prefix },
+          selection: { anchor: sel.from + 1 + prefix.length } });
+      }
+      return true;
+    }
+
+    // Ordered list: 1. item
+    const numberedM = text.match(/^(\s*)(\d+)\. /);
+    if (numberedM) {
+      const prefix = numberedM[1] + (parseInt(numberedM[2]) + 1) + '. ';
+      const contentStart = line.from + numberedM[0].length;
+      if (sel.from <= contentStart) {
+        view.dispatch({ changes: { from: line.from, to: line.to, insert: '' },
+          selection: { anchor: line.from } });
+      } else {
+        view.dispatch({ changes: { from: sel.from, insert: '\n' + prefix },
+          selection: { anchor: sel.from + 1 + prefix.length } });
+      }
+      return true;
+    }
+
+    return false;
+  },
+}]));
+
 // ─── Static base extensions ───────────────────────────────────────────────────
 
 const BASE_EXTENSIONS: Extension[] = [
+  listContinuationKeymap,
   history(),
   search({ top: false }),
   highlightActiveLine(),
