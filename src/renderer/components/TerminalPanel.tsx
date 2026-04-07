@@ -94,6 +94,7 @@ interface TerminalPanelProps {
   theme: Theme;
   position: 'bottom' | 'right';
   size: number;                       // height (bottom) or width (right)
+  visible: boolean;
   onSizeChange: (s: number) => void;
   onPositionToggle: () => void;
   onClose: () => void;
@@ -108,6 +109,7 @@ export default function TerminalPanel({
   theme,
   position,
   size,
+  visible,
   onSizeChange,
   onPositionToggle,
   onClose,
@@ -182,16 +184,23 @@ export default function TerminalPanel({
     termRef.current.options.theme = XTERM_THEMES[theme] ?? XTERM_THEMES.dark;
   }, [theme]);
 
-  // ─── Refit on size change ─────────────────────────────────────────────────
-  useEffect(() => {
-    if (!fitAddonRef.current || !termRef.current || pidRef.current === null) return;
-    // Defer one frame so the DOM has resized before measuring
+  // ─── Refit on size / visibility / position changes ───────────────────────
+  const refit = useCallback(() => {
     requestAnimationFrame(() => {
       if (!fitAddonRef.current || !termRef.current || pidRef.current === null) return;
       fitAddonRef.current.fit();
       window.terminalApp.resize(pidRef.current, termRef.current.cols, termRef.current.rows);
     });
-  }, [size]);
+  }, []);
+
+  useEffect(() => { refit(); }, [size, refit]);
+  useEffect(() => {
+    if (visible) {
+      refit();
+      requestAnimationFrame(() => termRef.current?.focus());
+    }
+  }, [visible, refit]);
+  useEffect(() => { refit(); }, [position, refit]);
 
   // ─── ResizeObserver (catches all other size changes) ─────────────────────
   useEffect(() => {
@@ -230,7 +239,9 @@ export default function TerminalPanel({
   }, [position, size, onSizeChange]);
 
   const isBottom = position === 'bottom';
-  const style    = isBottom ? { height: size } : { width: size };
+  const style    = isBottom
+    ? { height: size, display: visible ? undefined : 'none' as const }
+    : { width:  size, display: visible ? undefined : 'none' as const };
 
   return (
     <div className={`terminal-panel terminal-panel--${position}`} style={style}>

@@ -66,6 +66,7 @@ export default function App() {
   const [outlineOpen, setOutlineOpen]   = useState(false);
   const [headContent, setHeadContent] = useState<string | null | undefined>(undefined);
   const [terminalOpen, setTerminalOpen]         = useState(false);
+  const [terminalMounted, setTerminalMounted]   = useState(false);
   const [terminalPosition, setTerminalPosition] = useState<'bottom' | 'right'>('bottom');
   const [terminalSize, setTerminalSize]         = useState(260);
   const [editorSelection, setEditorSelection]   = useState<string>('');
@@ -240,7 +241,13 @@ export default function App() {
           setDialogInput('');
           break;
         case 'openSettings':   setSettingsOpen(true); break;
-        case 'toggleTerminal': setTerminalOpen(v => !v); break;
+        case 'toggleTerminal':
+          setTerminalOpen(v => {
+            if (!v) setTerminalMounted(true);
+            else    setTimeout(() => editorRef.current?.focus(), 0);
+            return !v;
+          });
+          break;
       }
     };
 
@@ -642,18 +649,19 @@ export default function App() {
         </div>
 
         {/* ── Terminal panel ──────────────────────────────────────────── */}
-        {terminalOpen && (
+        {terminalMounted && (
           <TerminalPanel
-            key={`terminal-${terminalPosition}`}
+            key="terminal"
             vaultPath={snapshot?.vaultPath ?? null}
             activeFile={activePath}
             selection={editorSelection}
             theme={settings.theme}
             position={terminalPosition}
+            visible={terminalOpen}
             size={terminalSize}
             onSizeChange={setTerminalSize}
             onPositionToggle={() => setTerminalPosition(p => p === 'bottom' ? 'right' : 'bottom')}
-            onClose={() => setTerminalOpen(false)}
+            onClose={() => { setTerminalOpen(false); setTimeout(() => editorRef.current?.focus(), 0); }}
           />
         )}
         </div>{/* workspace-body */}
