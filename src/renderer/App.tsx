@@ -13,6 +13,18 @@ import type {
   SearchResult,
 } from '../../shared/ipc';
 import { DEFAULT_SETTINGS } from '../../shared/ipc';
+
+// ─── Key combo normalisation ──────────────────────────────────────────────────
+
+function keyEventToString(e: KeyboardEvent): string {
+  const parts: string[] = [];
+  if (e.ctrlKey || e.metaKey) parts.push('Ctrl');
+  if (e.shiftKey) parts.push('Shift');
+  if (e.altKey) parts.push('Alt');
+  // Single printable chars → uppercase; special keys use e.key as-is
+  parts.push(e.key.length === 1 ? e.key.toUpperCase() : e.key);
+  return parts.join('+');
+}
 import { findPathByStem } from '../../shared/linking';
 import TabBar from './components/TabBar';
 import FileTree from './components/FileTree';
@@ -198,15 +210,25 @@ export default function App() {
     const onToggleOutline = () => setOutlineOpen(v => !v);
 
     const onKeyDown = (e: KeyboardEvent) => {
-      const ctrl = e.ctrlKey || e.metaKey;
-      if (ctrl && !e.shiftKey && e.key === 'Tab')  { e.preventDefault(); switchTab(+1); }
-      if (ctrl &&  e.shiftKey && e.key === 'Tab')  { e.preventDefault(); switchTab(-1); }
-      if (ctrl && e.key === 'PageDown')            { e.preventDefault(); switchTab(+1); }
-      if (ctrl && e.key === 'PageUp')              { e.preventDefault(); switchTab(-1); }
-      if (ctrl && e.key === 'w' && activePath)     { e.preventDefault(); closeTab(activePath); }
-      if (ctrl && e.key === 'p')                   { e.preventDefault(); setQuickOpenOpen(true); }
-      if (ctrl && e.key === 'b')                   { e.preventDefault(); setSidebarOpen(v => !v); }
-      if (ctrl && e.shiftKey && e.key === 'O')     { e.preventDefault(); setOutlineOpen(v => !v); }
+      const combo = keyEventToString(e);
+      const bindings = settings.appKeybindings ?? DEFAULT_SETTINGS.appKeybindings;
+      const binding = bindings.find(kb => kb.key === combo);
+      if (!binding) return;
+      e.preventDefault();
+      switch (binding.action) {
+        case 'quickOpen':     setQuickOpenOpen(true); break;
+        case 'toggleSidebar': setSidebarOpen(v => !v); break;
+        case 'toggleOutline': setOutlineOpen(v => !v); break;
+        case 'tabNext':       switchTab(+1); break;
+        case 'tabPrev':       switchTab(-1); break;
+        case 'tabClose':      if (activePath) closeTab(activePath); break;
+        case 'jumpBack':      jumpBack(); break;
+        case 'newNote':
+          setDialog({ kind: 'create-file', parentPath: snapshot?.vaultPath ?? '' });
+          setDialogInput('');
+          break;
+        case 'openSettings':  setSettingsOpen(true); break;
+      }
     };
 
     window.addEventListener('obsidian:tab-next',       onTabNext       as EventListener);
@@ -228,7 +250,7 @@ export default function App() {
       window.removeEventListener('obsidian:toggle-outline', onToggleOutline as EventListener);
       window.removeEventListener('keydown', onKeyDown);
     };
-  }, [switchTab, activePath, closeTab, jumpBack, setSidebarOpen, setOutlineOpen]);
+  }, [switchTab, activePath, closeTab, jumpBack, settings.appKeybindings, snapshot]);
 
   // ─── Mark tab dirty ───────────────────────────────────────────────────────
   const markDirty = useCallback((path: string, raw: string) => {
@@ -348,6 +370,18 @@ export default function App() {
 
   // ─── Render ───────────────────────────────────────────────────────────────
   return (
+    <div className="app-root">
+    <div className="app-titlebar">
+      <span className="app-titlebar-drag" />
+      <div className="titlebar-controls">
+        <button className="titlebar-btn minimize" title="Minimieren"
+          onClick={() => window.windowControls.minimize()} />
+        <button className="titlebar-btn maximize" title="Maximieren"
+          onClick={() => window.windowControls.toggleMaximize()} />
+        <button className="titlebar-btn close" title="Schließen"
+          onClick={() => window.windowControls.close()} />
+      </div>
+    </div>
     <div className={`app${sidebarOpen ? '' : ' sidebar-hidden'}`}>
       {/* ── Sidebar ──────────────────────────────────────────────────────── */}
       <aside className="sidebar">
@@ -495,7 +529,10 @@ export default function App() {
                 onSave={handleEditorSave}
                 onChange={handleEditorChange}
                 onLinkClick={handleLinkClick}
-                onCursorChange={(pos) => { activeCursorRef.current = pos; }}
+                onCursorChange={(pos) => {
+                  activeCursorRef.current = pos;
+                  if (activePath) pendingCursors.current.set(activePath, pos);
+                }}
                 onHeadingsChange={headings => {
                   setTabs(prev => prev.map(t =>
                     t.path === activeTab.path ? { ...t, headings } : t
@@ -596,6 +633,7 @@ export default function App() {
           </div>
         </div>
       )}
+    </div>
     </div>
   );
 }

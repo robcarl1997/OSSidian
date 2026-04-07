@@ -1,5 +1,6 @@
 import React, { useState, useCallback } from 'react';
-import type { AppSettings, Theme, VimKeybinding } from '../../../shared/ipc';
+import type { AppSettings, Theme, VimKeybinding, AppKeybinding, AppAction } from '../../../shared/ipc';
+import { DEFAULT_SETTINGS } from '../../../shared/ipc';
 
 // ─── Props ────────────────────────────────────────────────────────────────────
 
@@ -9,7 +10,7 @@ interface SettingsPanelProps {
   onClose: () => void;
 }
 
-type SettingsTab = 'appearance' | 'vim' | 'markdown';
+type SettingsTab = 'appearance' | 'vim' | 'markdown' | 'keybindings';
 
 // ─── Theme swatches ───────────────────────────────────────────────────────────
 
@@ -334,6 +335,133 @@ function MarkdownTab({
   );
 }
 
+// ─── App keybindings tab ──────────────────────────────────────────────────────
+
+const ACTION_LABELS: Record<AppAction, string> = {
+  quickOpen:     'Datei suchen (Quick Open)',
+  toggleSidebar: 'Seitenleiste umschalten',
+  toggleOutline: 'Gliederung umschalten',
+  tabNext:       'Nächster Tab',
+  tabPrev:       'Vorheriger Tab',
+  tabClose:      'Tab schließen',
+  jumpBack:      'Zurück navigieren',
+  newNote:       'Neue Notiz erstellen',
+  openSettings:  'Einstellungen öffnen',
+};
+
+const ALL_ACTIONS = Object.keys(ACTION_LABELS) as AppAction[];
+
+function KeyCaptureInput({ value, onChange }: { value: string; onChange: (key: string) => void }) {
+  const [capturing, setCapturing] = useState(false);
+
+  return (
+    <input
+      className="kb-input"
+      readOnly
+      value={capturing ? '…' : (value || '—')}
+      title="Klicken und Tastenkombination drücken"
+      onFocus={() => setCapturing(true)}
+      onBlur={() => setCapturing(false)}
+      onKeyDown={e => {
+        if (!capturing) return;
+        e.preventDefault();
+        e.stopPropagation();
+        if (['Control', 'Shift', 'Alt', 'Meta'].includes(e.key)) return;
+        if (e.key === 'Escape') { setCapturing(false); return; }
+        const parts: string[] = [];
+        if (e.ctrlKey || e.metaKey) parts.push('Ctrl');
+        if (e.shiftKey) parts.push('Shift');
+        if (e.altKey) parts.push('Alt');
+        parts.push(e.key.length === 1 ? e.key.toUpperCase() : e.key);
+        onChange(parts.join('+'));
+        setCapturing(false);
+      }}
+    />
+  );
+}
+
+function AppKeybindingsTab({
+  local,
+  setLocal,
+}: {
+  local: Partial<AppSettings>;
+  setLocal: React.Dispatch<React.SetStateAction<Partial<AppSettings>>>;
+}) {
+  const bindings = (local.appKeybindings ?? DEFAULT_SETTINGS.appKeybindings) as AppKeybinding[];
+
+  const addBinding = () =>
+    setLocal(l => ({
+      ...l,
+      appKeybindings: [...(l.appKeybindings ?? DEFAULT_SETTINGS.appKeybindings), { key: '', action: 'quickOpen' }],
+    }));
+
+  const updateBinding = (idx: number, patch: Partial<AppKeybinding>) =>
+    setLocal(l => ({
+      ...l,
+      appKeybindings: (l.appKeybindings ?? DEFAULT_SETTINGS.appKeybindings).map((b, i) => i === idx ? { ...b, ...patch } : b),
+    }));
+
+  const removeBinding = (idx: number) =>
+    setLocal(l => ({
+      ...l,
+      appKeybindings: (l.appKeybindings ?? DEFAULT_SETTINGS.appKeybindings).filter((_, i) => i !== idx),
+    }));
+
+  const resetToDefaults = () =>
+    setLocal(l => ({ ...l, appKeybindings: DEFAULT_SETTINGS.appKeybindings }));
+
+  return (
+    <div className="settings-body">
+      <div className="settings-section">
+        <div className="settings-section-title">Globale Tastenkürzel</div>
+        <div style={{ marginBottom: 8, fontSize: 12, color: 'var(--text-faint)' }}>
+          Klicke auf ein Feld und drücke die gewünschte Kombination. Mehrere Belegungen für dieselbe Aktion sind möglich.
+        </div>
+        <table className="keybinding-table">
+          <thead>
+            <tr>
+              <th>Tastenkombination</th>
+              <th>Aktion</th>
+              <th></th>
+            </tr>
+          </thead>
+          <tbody>
+            {bindings.map((kb, idx) => (
+              <tr key={idx}>
+                <td>
+                  <KeyCaptureInput value={kb.key} onChange={key => updateBinding(idx, { key })} />
+                </td>
+                <td>
+                  <select
+                    className="kb-select"
+                    value={kb.action}
+                    onChange={e => updateBinding(idx, { action: e.target.value as AppAction })}
+                  >
+                    {ALL_ACTIONS.map(a => (
+                      <option key={a} value={a}>{ACTION_LABELS[a]}</option>
+                    ))}
+                  </select>
+                </td>
+                <td>
+                  <button className="kb-remove" onClick={() => removeBinding(idx)}>×</button>
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+        <div style={{ display: 'flex', gap: 8, marginTop: 8 }}>
+          <button className="add-keybinding-btn" onClick={addBinding}>
+            + Tastenkürzel hinzufügen
+          </button>
+          <button className="add-keybinding-btn" onClick={resetToDefaults} style={{ marginLeft: 'auto' }}>
+            Zurücksetzen
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 // ─── Main component ───────────────────────────────────────────────────────────
 
 export default function SettingsPanel({ settings, onSave, onClose }: SettingsPanelProps) {
@@ -360,9 +488,10 @@ export default function SettingsPanel({ settings, onSave, onClose }: SettingsPan
         {/* Tabs */}
         <div className="settings-tabs">
           {([
-            ['appearance', '🎨 Erscheinungsbild'],
-            ['vim',        '⌨️ Vim'],
-            ['markdown',   '📝 Markdown'],
+            ['appearance',  '🎨 Erscheinungsbild'],
+            ['vim',         '⌨️ Vim'],
+            ['markdown',    '📝 Markdown'],
+            ['keybindings', '🔑 Tastenkürzel'],
           ] as const).map(([id, label]) => (
             <button
               key={id}
@@ -375,9 +504,10 @@ export default function SettingsPanel({ settings, onSave, onClose }: SettingsPan
         </div>
 
         {/* Tab content */}
-        {activeTab === 'appearance' && <AppearanceTab local={local} setLocal={setLocal} />}
-        {activeTab === 'vim'        && <VimTab        local={local} setLocal={setLocal} />}
-        {activeTab === 'markdown'   && <MarkdownTab   local={local} setLocal={setLocal} />}
+        {activeTab === 'appearance'  && <AppearanceTab      local={local} setLocal={setLocal} />}
+        {activeTab === 'vim'         && <VimTab             local={local} setLocal={setLocal} />}
+        {activeTab === 'markdown'    && <MarkdownTab        local={local} setLocal={setLocal} />}
+        {activeTab === 'keybindings' && <AppKeybindingsTab  local={local} setLocal={setLocal} />}
 
         {/* Actions */}
         <div className="modal-actions" style={{ marginTop: 20, borderTop: '1px solid var(--border)', paddingTop: 16 }}>

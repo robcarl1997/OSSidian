@@ -97,9 +97,59 @@ body {
 
 /* ─── App layout ───────────────────────────────────────────────────────────── */
 
+.app-root {
+  display: flex;
+  flex-direction: column;
+  height: 100vh;
+  overflow: hidden;
+}
+
+.app-titlebar {
+  display: flex;
+  align-items: center;
+  height: 32px;
+  min-height: 32px;
+  background: var(--sidebar-bg);
+  border-bottom: 1px solid var(--border);
+  -webkit-app-region: drag;
+  user-select: none;
+  flex-shrink: 0;
+}
+
+.app-titlebar-drag {
+  flex: 1;
+}
+
+.titlebar-controls {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 0 10px;
+  -webkit-app-region: no-drag;
+}
+
+.titlebar-btn {
+  width: 13px;
+  height: 13px;
+  border-radius: 50%;
+  border: none;
+  cursor: pointer;
+  padding: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 9px;
+  color: transparent;
+  transition: filter 0.15s;
+}
+.titlebar-btn:hover { filter: brightness(0.8); }
+.titlebar-btn.close    { background: #ff5f57; }
+.titlebar-btn.minimize { background: #ffbd2e; }
+.titlebar-btn.maximize { background: #28c840; }
+
 .app {
   display: flex;
-  height: 100vh;
+  flex: 1;
   overflow: hidden;
 }
 

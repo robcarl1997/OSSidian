@@ -284,6 +284,15 @@ function setupIPC(): void {
     saveSettings(settings);
     return settings;
   });
+
+  // ── Window controls ──────────────────────────────────────────────────────
+  ipcMain.handle('window:minimize',        () => mainWindow?.minimize());
+  ipcMain.handle('window:toggle-maximize', () => {
+    if (mainWindow?.isMaximized()) mainWindow.unmaximize();
+    else mainWindow?.maximize();
+  });
+  ipcMain.handle('window:close',           () => mainWindow?.close());
+  ipcMain.handle('window:is-maximized',    () => mainWindow?.isMaximized() ?? false);
 }
 
 // ─── Link rewriting ───────────────────────────────────────────────────────────
@@ -323,7 +332,7 @@ function createWindow(): void {
     height: 820,
     minWidth: 800,
     minHeight: 600,
-    titleBarStyle: process.platform === 'darwin' ? 'hiddenInset' : 'default',
+    frame: false,
     webPreferences: {
       preload: path.join(__dirname, 'preload.js'),
       contextIsolation: true,

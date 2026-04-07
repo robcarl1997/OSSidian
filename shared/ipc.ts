@@ -10,6 +10,22 @@ export interface VimKeybinding {
   mode: 'insert' | 'normal' | 'visual';
 }
 
+export type AppAction =
+  | 'quickOpen'
+  | 'toggleSidebar'
+  | 'toggleOutline'
+  | 'tabNext'
+  | 'tabPrev'
+  | 'tabClose'
+  | 'jumpBack'
+  | 'newNote'
+  | 'openSettings';
+
+export interface AppKeybinding {
+  key: string;      // normalised combo, e.g. "Ctrl+P", "Ctrl+Shift+O"
+  action: AppAction;
+}
+
 export interface AppSettings {
   lastVaultPath: string | null;
   editorMode: EditorMode;
@@ -22,6 +38,7 @@ export interface AppSettings {
   editorLineHeight: number;    // 1.0–2.5
   vimKeybindings: VimKeybinding[];
   vimLeader: string;
+  appKeybindings: AppKeybinding[];
 }
 
 export const DEFAULT_SETTINGS: AppSettings = {
@@ -36,6 +53,16 @@ export const DEFAULT_SETTINGS: AppSettings = {
   editorLineHeight: 1.75,
   vimKeybindings: [],
   vimLeader: '\\',
+  appKeybindings: [
+    { key: 'Ctrl+P',         action: 'quickOpen'     },
+    { key: 'Ctrl+B',         action: 'toggleSidebar' },
+    { key: 'Ctrl+Shift+O',   action: 'toggleOutline' },
+    { key: 'Ctrl+Tab',       action: 'tabNext'        },
+    { key: 'Ctrl+PageDown',  action: 'tabNext'        },
+    { key: 'Ctrl+Shift+Tab', action: 'tabPrev'        },
+    { key: 'Ctrl+PageUp',    action: 'tabPrev'        },
+    { key: 'Ctrl+W',         action: 'tabClose'       },
+  ],
 };
 
 // ─── Vault ───────────────────────────────────────────────────────────────────
@@ -109,8 +136,16 @@ export interface VaultApi {
   onVaultChanged(cb: (event: VaultChangeEvent) => void): () => void;
 }
 
+export interface WindowControls {
+  minimize(): Promise<void>;
+  toggleMaximize(): Promise<void>;
+  close(): Promise<void>;
+  isMaximized(): Promise<boolean>;
+}
+
 declare global {
   interface Window {
     vaultApp: VaultApi;
+    windowControls: WindowControls;
   }
 }
