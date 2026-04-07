@@ -1147,3 +1147,72 @@ body {
   background: var(--bg-hover) !important;
   color: var(--text-primary) !important;
 }
+
+/* ── Quick Open ─────────────────────────────────────────────────────────── */
+
+.quick-open {
+  background: var(--bg-surface);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  width: 560px;
+  max-width: 90vw;
+  max-height: 70vh;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  box-shadow: 0 20px 60px rgba(0,0,0,0.5);
+}
+
+.quick-open-input {
+  background: transparent;
+  border: none;
+  border-bottom: 1px solid var(--border);
+  color: var(--text-primary);
+  font-size: 15px;
+  padding: 14px 16px;
+  outline: none;
+  width: 100%;
+  box-sizing: border-box;
+}
+
+.quick-open-input::placeholder { color: var(--text-faint); }
+
+.quick-open-list {
+  overflow-y: auto;
+  flex: 1;
+  padding: 4px;
+}
+
+.quick-open-item {
+  display: flex;
+  flex-direction: column;
+  padding: 7px 12px;
+  border-radius: 6px;
+  cursor: pointer;
+  gap: 1px;
+}
+
+.quick-open-item.selected { background: var(--bg-hover); }
+
+.quick-open-name {
+  font-size: 13px;
+  color: var(--text-primary);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.quick-open-dir {
+  font-size: 11px;
+  color: var(--text-faint);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.quick-open-empty {
+  padding: 20px;
+  text-align: center;
+  color: var(--text-faint);
+  font-size: 13px;
+}

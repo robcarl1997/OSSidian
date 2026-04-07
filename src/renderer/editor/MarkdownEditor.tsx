@@ -130,6 +130,12 @@ function registerAppVimCommands(): void {
   Vim.defineEx('followlink', '', (cm: { cm6: EditorView }) => {
     followLinkAtCursor(cm.cm6);
   });
+  Vim.defineEx('jumpback', 'ju', () => {
+    window.dispatchEvent(new CustomEvent('obsidian:jump-back'));
+  });
+  Vim.defineEx('quickopen', 'qu', () => {
+    window.dispatchEvent(new CustomEvent('obsidian:quick-open'));
+  });
 
   // Default normal-mode mappings (can be overridden via vimKeybindings settings)
   Vim.map('gt', ':tabnext<CR>', 'normal');

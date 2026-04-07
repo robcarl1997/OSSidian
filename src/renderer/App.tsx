@@ -17,6 +17,7 @@ import { findPathByStem } from '../../shared/linking';
 import TabBar from './components/TabBar';
 import FileTree from './components/FileTree';
 import SettingsPanel from './components/SettingsPanel';
+import QuickOpen from './components/QuickOpen';
 import MarkdownEditor from './editor/MarkdownEditor';
 
 // ─── Types ────────────────────────────────────────────────────────────────────
@@ -43,6 +44,8 @@ export default function App() {
   const [searchQuery, setSearchQuery]   = useState('');
   const [searchResults, setSearchResults] = useState<SearchResult[]>([]);
   const [pendingAnchor, setPendingAnchor] = useState<string | null>(null);
+  const [navHistory, setNavHistory]     = useState<string[]>([]);
+  const [quickOpenOpen, setQuickOpenOpen] = useState(false);
 
   const deferredSearch = useDeferredValue(searchQuery);
   const autosaveTimer  = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -94,7 +97,7 @@ export default function App() {
   }, [dialog]);
 
   // ─── Open a note ─────────────────────────────────────────────────────────
-  const openNote = useCallback(async (rawTarget: string, anchor?: string, external?: boolean) => {
+  const openNote = useCallback(async (rawTarget: string, anchor?: string, external?: boolean, fromLink?: boolean) => {
     if (external) {
       window.vaultApp.openExternal(rawTarget);
       return;
@@ -114,6 +117,11 @@ export default function App() {
         const newEntry = await window.vaultApp.createEntry(snapshot.vaultPath, rawTarget, 'file');
         filePath = newEntry.path;
       }
+    }
+
+    // Push current position to history before navigating via a link
+    if (fromLink && activePath && activePath !== filePath) {
+      setNavHistory(prev => [...prev, activePath]);
     }
 
     // Check if already open
@@ -139,7 +147,7 @@ export default function App() {
   const handleLinkClick = useCallback((target: string, external: boolean) => {
     // Parse anchor from target (e.g. "Note#heading")
     const [note, anchor] = target.split('#');
-    openNote(note, anchor, external);
+    openNote(note, anchor, external, true);
   }, [openNote]);
 
   // ─── Close a tab ─────────────────────────────────────────────────────────
@@ -156,6 +164,14 @@ export default function App() {
     });
   }, [activePath]);
 
+  // ─── Jump back in navigation history ─────────────────────────────────────
+  const jumpBack = useCallback(() => {
+    if (navHistory.length === 0) return;
+    const prev = navHistory[navHistory.length - 1];
+    setNavHistory(h => h.slice(0, -1));
+    openNote(prev);
+  }, [navHistory, openNote]);
+
   // ─── Tab navigation helpers ───────────────────────────────────────────────
   const switchTab = useCallback((delta: number) => {
     if (tabs.length === 0) return;
@@ -166,9 +182,11 @@ export default function App() {
 
   // ─── Global keyboard shortcuts + Vim app-event listeners ─────────────────
   useEffect(() => {
-    const onTabNext  = () => switchTab(+1);
-    const onTabPrev  = () => switchTab(-1);
-    const onTabClose = () => { if (activePath) closeTab(activePath); };
+    const onTabNext   = () => switchTab(+1);
+    const onTabPrev   = () => switchTab(-1);
+    const onTabClose  = () => { if (activePath) closeTab(activePath); };
+    const onJumpBack  = () => jumpBack();
+    const onQuickOpen = () => setQuickOpenOpen(true);
 
     const onKeyDown = (e: KeyboardEvent) => {
       const ctrl = e.ctrlKey || e.metaKey;
@@ -177,20 +195,25 @@ export default function App() {
       if (ctrl && e.key === 'PageDown')            { e.preventDefault(); switchTab(+1); }
       if (ctrl && e.key === 'PageUp')              { e.preventDefault(); switchTab(-1); }
       if (ctrl && e.key === 'w' && activePath)     { e.preventDefault(); closeTab(activePath); }
+      if (ctrl && e.key === 'p')                   { e.preventDefault(); setQuickOpenOpen(true); }
     };
 
-    window.addEventListener('obsidian:tab-next',  onTabNext  as EventListener);
-    window.addEventListener('obsidian:tab-prev',  onTabPrev  as EventListener);
-    window.addEventListener('obsidian:tab-close', onTabClose as EventListener);
+    window.addEventListener('obsidian:tab-next',  onTabNext   as EventListener);
+    window.addEventListener('obsidian:tab-prev',  onTabPrev   as EventListener);
+    window.addEventListener('obsidian:tab-close', onTabClose  as EventListener);
+    window.addEventListener('obsidian:jump-back', onJumpBack  as EventListener);
+    window.addEventListener('obsidian:quick-open', onQuickOpen as EventListener);
     window.addEventListener('keydown', onKeyDown);
 
     return () => {
-      window.removeEventListener('obsidian:tab-next',  onTabNext  as EventListener);
-      window.removeEventListener('obsidian:tab-prev',  onTabPrev  as EventListener);
-      window.removeEventListener('obsidian:tab-close', onTabClose as EventListener);
+      window.removeEventListener('obsidian:tab-next',  onTabNext   as EventListener);
+      window.removeEventListener('obsidian:tab-prev',  onTabPrev   as EventListener);
+      window.removeEventListener('obsidian:tab-close', onTabClose  as EventListener);
+      window.removeEventListener('obsidian:jump-back', onJumpBack  as EventListener);
+      window.removeEventListener('obsidian:quick-open', onQuickOpen as EventListener);
       window.removeEventListener('keydown', onKeyDown);
     };
-  }, [switchTab, activePath, closeTab]);
+  }, [switchTab, activePath, closeTab, jumpBack]);
 
   // ─── Mark tab dirty ───────────────────────────────────────────────────────
   const markDirty = useCallback((path: string, raw: string) => {
@@ -453,6 +476,15 @@ export default function App() {
           )}
         </div>
       </main>
+
+      {/* ── Quick Open ──────────────────────────────────────────────────── */}
+      {quickOpenOpen && (
+        <QuickOpen
+          allPaths={snapshot?.allPaths ?? []}
+          onOpen={path => openNote(path)}
+          onClose={() => setQuickOpenOpen(false)}
+        />
+      )}
 
       {/* ── Settings panel ──────────────────────────────────────────────── */}
       {settingsOpen && (
