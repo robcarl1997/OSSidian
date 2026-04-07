@@ -73,10 +73,12 @@ export default function App() {
   const activeCursorRef  = useRef<number>(0);
   const pendingCursors   = useRef(new Map<string, number>());
   const editorRef        = useRef<MarkdownEditorHandle>(null);
-  const snapshotRef      = useRef(snapshot);
-  const activePathRef    = useRef(activePath);
+  const snapshotRef        = useRef(snapshot);
+  const activePathRef      = useRef(activePath);
+  const editorSelectionRef = useRef(editorSelection);
   useEffect(() => { snapshotRef.current = snapshot; }, [snapshot]);
   useEffect(() => { activePathRef.current = activePath; }, [activePath]);
+  useEffect(() => { editorSelectionRef.current = editorSelection; }, [editorSelection]);
 
   const deferredSearch = useDeferredValue(searchQuery);
   const autosaveTimer  = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -243,8 +245,13 @@ export default function App() {
         case 'openSettings':   setSettingsOpen(true); break;
         case 'toggleTerminal':
           setTerminalOpen(v => {
-            if (!v) setTerminalMounted(true);
-            else    setTimeout(() => editorRef.current?.focus(), 0);
+            if (!v) {
+              setTerminalMounted(true);
+              // Write context when opening — selection/path read from refs below
+              setTimeout(() => window.vaultApp.writeContext(activePathRef.current, editorSelectionRef.current), 0);
+            } else {
+              setTimeout(() => editorRef.current?.focus(), 0);
+            }
             return !v;
           });
           break;
@@ -661,6 +668,7 @@ export default function App() {
             size={terminalSize}
             onSizeChange={setTerminalSize}
             onPositionToggle={() => setTerminalPosition(p => p === 'bottom' ? 'right' : 'bottom')}
+            onContextUpdate={() => window.vaultApp.writeContext(activePathRef.current, editorSelectionRef.current)}
             onClose={() => { setTerminalOpen(false); setTimeout(() => editorRef.current?.focus(), 0); }}
           />
         )}

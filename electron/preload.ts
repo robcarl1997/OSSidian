@@ -49,6 +49,8 @@ const api: VaultApi = {
   gitLog:         (limit?: number)              => ipcRenderer.invoke('git:log', limit),
   gitFileAtHead:  (filePath: string)            => ipcRenderer.invoke('git:file-at-head', filePath),
   gitRestore:     (paths: string[])             => ipcRenderer.invoke('git:restore', paths),
+  writeContext:   (filePath: string | null, selection: string) =>
+    ipcRenderer.invoke('context:write', filePath, selection),
 };
 
 contextBridge.exposeInMainWorld('vaultApp', api);

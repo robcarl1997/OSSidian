@@ -97,6 +97,7 @@ interface TerminalPanelProps {
   visible: boolean;
   onSizeChange: (s: number) => void;
   onPositionToggle: () => void;
+  onContextUpdate: () => void;
   onClose: () => void;
 }
 
@@ -112,15 +113,25 @@ export default function TerminalPanel({
   visible,
   onSizeChange,
   onPositionToggle,
+  onContextUpdate,
   onClose,
 }: TerminalPanelProps) {
   const containerRef = useRef<HTMLDivElement>(null);
   const termRef      = useRef<Terminal | null>(null);
   const fitAddonRef  = useRef<FitAddon | null>(null);
   const pidRef       = useRef<number | null>(null);
-  const unsubData    = useRef<(() => void) | null>(null);
-  const unsubExit    = useRef<(() => void) | null>(null);
-  const dragRef      = useRef<{ startCoord: number; startSize: number } | null>(null);
+  const unsubData          = useRef<(() => void) | null>(null);
+  const unsubExit          = useRef<(() => void) | null>(null);
+  const dragRef            = useRef<{ startCoord: number; startSize: number } | null>(null);
+  const onContextUpdateRef = useRef(onContextUpdate);
+  const vaultPathRef       = useRef(vaultPath);
+  const activeFileRef      = useRef(activeFile);
+  const selectionRef       = useRef(selection);
+
+  useEffect(() => { onContextUpdateRef.current = onContextUpdate; });
+  useEffect(() => { vaultPathRef.current = vaultPath; });
+  useEffect(() => { activeFileRef.current = activeFile; });
+  useEffect(() => { selectionRef.current = selection; });
 
   // ─── Boot terminal (once on mount) ───────────────────────────────────────
   useEffect(() => {
@@ -138,34 +149,54 @@ export default function TerminalPanel({
     term.open(containerRef.current);
     fitAddon.fit();
 
-    termRef.current    = term;
+    termRef.current     = term;
     fitAddonRef.current = fitAddon;
 
-    const env: Record<string, string> = {};
-    if (activeFile) env['OBSIDIAN_FILE']      = activeFile;
-    if (selection)  env['OBSIDIAN_SELECTION'] = selection;
+    const onFocus = () => onContextUpdateRef.current();
+    term.textarea?.addEventListener('focus', onFocus);
 
-    window.terminalApp
-      .create(term.cols, term.rows, vaultPath ?? '/', env)
-      .then(pid => {
-        pidRef.current = pid;
+    // ── Spawn (or respawn) the shell process ─────────────────────────────
+    const spawnPty = async () => {
+      const env: Record<string, string> = {};
+      const af = activeFileRef.current;
+      const sel = selectionRef.current;
+      if (af)  env['OBSIDIAN_FILE']      = af;
+      if (sel) env['OBSIDIAN_SELECTION'] = sel;
 
-        unsubData.current = window.terminalApp.onData((p, data) => {
-          if (p === pid) term.write(data);
-        });
-        unsubExit.current = window.terminalApp.onExit((p) => {
-          if (p === pid) {
-            term.writeln('\r\n[Process beendet]');
-            pidRef.current = null;
-          }
-        });
+      const pid = await window.terminalApp.create(
+        term.cols, term.rows, vaultPathRef.current ?? '/', env,
+      );
+      pidRef.current = pid;
 
-        term.onData(data => {
-          if (pidRef.current !== null) window.terminalApp.write(pid, data);
+      // Unsub previous listeners before attaching new ones
+      unsubData.current?.();
+      unsubExit.current?.();
+
+      unsubData.current = window.terminalApp.onData((p, data) => {
+        if (p === pid) term.write(data);
+      });
+      unsubExit.current = window.terminalApp.onExit((p) => {
+        if (p !== pid) return;
+        term.writeln('\r\n\x1b[2m[Prozess beendet — beliebige Taste zum Neustart]\x1b[0m');
+        pidRef.current = null;
+
+        // One-shot listener: next keypress respawns the shell
+        const unsub = term.onData(() => {
+          unsub.dispose();
+          term.reset();
+          spawnPty();
         });
       });
+    };
+
+    spawnPty();
+
+    term.onData(data => {
+      if (pidRef.current !== null) window.terminalApp.write(pidRef.current, data);
+    });
 
     return () => {
+      term.textarea?.removeEventListener('focus', onFocus);
       unsubData.current?.();
       unsubExit.current?.();
       if (pidRef.current !== null) {

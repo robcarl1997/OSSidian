@@ -171,6 +171,7 @@ export interface VaultApi {
   gitLog(limit?: number): Promise<GitCommit[]>;
   gitFileAtHead(filePath: string): Promise<string | null>;
   gitRestore(paths: string[]): Promise<void>;
+  writeContext(filePath: string | null, selection: string): Promise<string>;
 }
 
 export interface WindowControls {

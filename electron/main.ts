@@ -1,6 +1,7 @@
 import { app, BrowserWindow, ipcMain, dialog, shell, protocol } from 'electron';
 import * as fs from 'fs';
 import * as path from 'path';
+import * as os from 'os';
 import chokidar from 'chokidar';
 import simpleGit from 'simple-git';
 import * as pty from 'node-pty';
@@ -413,6 +414,22 @@ function setupIPC(): void {
     }
   });
 
+  // ── context:write ────────────────────────────────────────────────────────
+  const CONTEXT_FILE = path.join(os.tmpdir(), 'obsidian-context.md');
+  ipcMain.handle('context:write', async (_e, filePath: string | null, selection: string): Promise<string> => {
+    const lines: string[] = ['# Obsidian Clone – Editor Context', ''];
+    if (filePath) {
+      lines.push(`**File:** ${filePath}`, '');
+    }
+    if (selection.trim()) {
+      lines.push('**Selection:**', '', '```', selection, '```', '');
+    } else {
+      lines.push('*(No selection)*', '');
+    }
+    fs.writeFileSync(CONTEXT_FILE, lines.join('\n'), 'utf-8');
+    return CONTEXT_FILE;
+  });
+
   // ── Terminal (node-pty) ──────────────────────────────────────────────────
   const ptys = new Map<number, pty.IPty>();
   const userShell = process.env.SHELL || (process.platform === 'win32' ? 'powershell.exe' : 'bash');
@@ -423,7 +440,7 @@ function setupIPC(): void {
       cols: cols || 80,
       rows: rows || 24,
       cwd: cwd || (vaultPath ?? process.env.HOME ?? '/'),
-      env: { ...process.env, ...env } as Record<string, string>,
+      env: { ...process.env, OBSIDIAN_CONTEXT_FILE: CONTEXT_FILE, ...env } as Record<string, string>,
     });
     ptys.set(ptyProcess.pid, ptyProcess);
     ptyProcess.onData(data => {
