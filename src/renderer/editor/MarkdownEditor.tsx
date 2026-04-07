@@ -1,4 +1,4 @@
-import { useEffect, useRef, useCallback, forwardRef, useImperativeHandle } from 'react';
+import { useEffect, useRef, useCallback, forwardRef, useImperativeHandle, useState, useMemo } from 'react';
 import { EditorView, keymap, highlightActiveLine, drawSelection, gutter, GutterMarker } from '@codemirror/view';
 import { EditorState, Compartment, Extension } from '@codemirror/state';
 import { defaultKeymap, history, historyKeymap, indentWithTab } from '@codemirror/commands';
@@ -9,6 +9,9 @@ import { livePreviewPlugin, livePreviewBlockField, livePreviewConfig } from './l
 import { wikilinkAutocomplete, autocompleteConfig } from './linkAutocomplete';
 import type { NoteDocument, VimKeybinding } from '../../../shared/ipc';
 import { extractHeadings } from '../../../shared/linking';
+import SlashCommandMenu from './SlashCommandMenu';
+import { filterCommands } from './slashCommands';
+import type { SlashCommand } from './slashCommands';
 
 // ─── Handle (for parent to call focus()) ─────────────────────────────────────
 
@@ -49,9 +52,23 @@ const editorTheme = EditorView.theme({
 
 // ─── Compartments (for dynamic reconfiguration) ───────────────────────────────
 
-const vimCompartment       = new Compartment();
-const livePreviewCompartment = new Compartment();
+const vimCompartment          = new Compartment();
+const livePreviewCompartment  = new Compartment();
 const autocompleteCompartment = new Compartment();
+const fontCompartment         = new Compartment();
+
+// Font theme — reconfiguring via dispatch() makes CM6 remeasure line heights.
+// Setting fonts via CSS inheritance on an outer element does NOT trigger CM6's
+// internal remeasure, which causes stale cursor/line positions after zoom.
+function makeFontTheme(fontFamily: string, fontSize: number, lineHeight: number): Extension {
+  return EditorView.theme({
+    '.cm-content': {
+      fontFamily,
+      fontSize: `${fontSize}px`,
+      lineHeight: String(lineHeight),
+    },
+  });
+}
 
 // ─── Vim keybinding helpers ───────────────────────────────────────────────────
 
@@ -272,6 +289,16 @@ const MarkdownEditor = forwardRef<MarkdownEditorHandle, MarkdownEditorProps>(fun
   useEffect(() => { onCursorChangeRef.current = onCursorChange; });
   useEffect(() => { onHeadingsChangeRef.current = onHeadingsChange; });
 
+  // ── Slash command menu state ───────────────────────────────────────────────
+  const [slashMenu, setSlashMenu] = useState<{ x: number; y: number; from: number; query: string } | null>(null);
+  const [slashSelectedIdx, setSlashSelectedIdx] = useState(0);
+  const filteredCmds = useMemo(
+    () => (slashMenu ? filterCommands(slashMenu.query) : []),
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [slashMenu?.query],
+  );
+  useEffect(() => { setSlashSelectedIdx(0); }, [filteredCmds]);
+
   // ── Create editor on mount ─────────────────────────────────────────────────
   useEffect(() => {
     if (!containerRef.current) return;
@@ -284,6 +311,26 @@ const MarkdownEditor = forwardRef<MarkdownEditorHandle, MarkdownEditorProps>(fun
       }
       if (update.selectionSet) {
         onCursorChangeRef.current?.(update.state.selection.main.head);
+      }
+      // ── Slash command menu detection ──────────────────────────────────────
+      if (update.docChanged || update.selectionSet) {
+        const head = update.state.selection.main.head;
+        const line = update.state.doc.lineAt(head);
+        const textBefore = line.text.slice(0, head - line.from);
+        const m = /\/([^\n ]*)$/.exec(textBefore);
+        if (m !== null) {
+          const slashPos = head - m[0].length;
+          const coords = update.view.coordsAtPos(slashPos);
+          if (coords) {
+            setSlashMenu(prev => {
+              const next = { x: coords.left, y: coords.bottom, from: slashPos, query: m[1] };
+              if (prev && prev.from === next.from && prev.query === next.query) return prev;
+              return next;
+            });
+          }
+        } else {
+          setSlashMenu(prev => prev !== null ? null : prev);
+        }
       }
     });
 
@@ -312,6 +359,7 @@ const MarkdownEditor = forwardRef<MarkdownEditorHandle, MarkdownEditorProps>(fun
           wikilinkAutocomplete(),
           autocompleteConfig.of({ allPaths, notePath: doc.path }),
         ]),
+        fontCompartment.of(makeFontTheme(fontFamily, fontSize, lineHeight)),
       ],
     });
 
@@ -390,6 +438,13 @@ const MarkdownEditor = forwardRef<MarkdownEditorHandle, MarkdownEditorProps>(fun
     });
   }, [allPaths, doc.path]);
 
+  // ── Reconfigure font (dispatch triggers CM6's internal remeasure) ──────────
+  useEffect(() => {
+    const view = viewRef.current;
+    if (!view) return;
+    view.dispatch({ effects: fontCompartment.reconfigure(makeFontTheme(fontFamily, fontSize, lineHeight)) });
+  }, [fontFamily, fontSize, lineHeight]);
+
   // ── Navigate to anchor ─────────────────────────────────────────────────────
   useEffect(() => {
     if (!pendingAnchor || !viewRef.current) return;
@@ -413,6 +468,46 @@ const MarkdownEditor = forwardRef<MarkdownEditorHandle, MarkdownEditorProps>(fun
     }
   }, [pendingAnchor]);
 
+  // ── Slash command: execute ─────────────────────────────────────────────────
+  const executeSlashCommand = useCallback((cmd: SlashCommand) => {
+    const view = viewRef.current;
+    if (!view || !slashMenu) return;
+    const to = view.state.selection.main.head;
+    view.dispatch({
+      changes: { from: slashMenu.from, to, insert: cmd.insert },
+      selection: { anchor: slashMenu.from + cmd.cursorOffset },
+    });
+    setSlashMenu(null);
+    view.focus();
+  }, [slashMenu]);
+
+  // ── Slash command: keyboard navigation (capture phase beats CM6) ───────────
+  useEffect(() => {
+    const el = containerRef.current;
+    if (!el || !slashMenu) return;
+    const cmds = filteredCmds;
+
+    const handler = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') {
+        setSlashMenu(null);
+      } else if (e.key === 'ArrowDown') {
+        setSlashSelectedIdx(i => Math.min(i + 1, cmds.length - 1));
+      } else if (e.key === 'ArrowUp') {
+        setSlashSelectedIdx(i => Math.max(i - 1, 0));
+      } else if (e.key === 'Enter' || e.key === 'Tab') {
+        const cmd = cmds[slashSelectedIdx];
+        if (cmd) executeSlashCommand(cmd);
+      } else {
+        return; // don't swallow other keys
+      }
+      e.preventDefault();
+      e.stopImmediatePropagation();
+    };
+
+    el.addEventListener('keydown', handler, true); // capture before CM6
+    return () => el.removeEventListener('keydown', handler, true);
+  }, [slashMenu, filteredCmds, slashSelectedIdx, executeSlashCommand]);
+
   // ── Link click events ──────────────────────────────────────────────────────
   const handleLinkClick = useCallback((e: Event) => {
     const { target, external } = (e as CustomEvent<{ target: string; external: boolean }>).detail;
@@ -427,15 +522,21 @@ const MarkdownEditor = forwardRef<MarkdownEditorHandle, MarkdownEditorProps>(fun
   }, [handleLinkClick]);
 
   return (
-    <div
-      ref={containerRef}
-      className="editor-wrap"
-      style={{
-        fontFamily,
-        fontSize: `${fontSize}px`,
-        lineHeight,
-      }}
-    />
+    <>
+      <div
+        ref={containerRef}
+        className="editor-wrap"
+      />
+      {slashMenu && filteredCmds.length > 0 && (
+        <SlashCommandMenu
+          x={slashMenu.x}
+          y={slashMenu.y}
+          commands={filteredCmds}
+          selectedIdx={slashSelectedIdx}
+          onSelect={executeSlashCommand}
+        />
+      )}
+    </>
   );
 });
 

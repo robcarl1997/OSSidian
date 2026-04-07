@@ -349,6 +349,16 @@ const ACTION_LABELS: Record<AppAction, string> = {
   openSettings:  'Einstellungen öffnen',
 };
 
+const VIM_COMMANDS: Partial<Record<AppAction, string>> = {
+  quickOpen:     ':quickopen  :qu',
+  toggleSidebar: ':sidebar  :si',
+  toggleOutline: ':outline  :ou',
+  tabNext:       ':tabnext  :tabn  gt',
+  tabPrev:       ':tabprev  :tabp  gT',
+  tabClose:      ':tabclose  :tabc',
+  jumpBack:      ':jumpback  :ju',
+};
+
 const ALL_ACTIONS = Object.keys(ACTION_LABELS) as AppAction[];
 
 function KeyCaptureInput({ value, onChange }: { value: string; onChange: (key: string) => void }) {
@@ -422,6 +432,7 @@ function AppKeybindingsTab({
             <tr>
               <th>Tastenkombination</th>
               <th>Aktion</th>
+              <th>Vim-Befehl</th>
               <th></th>
             </tr>
           </thead>
@@ -441,6 +452,9 @@ function AppKeybindingsTab({
                       <option key={a} value={a}>{ACTION_LABELS[a]}</option>
                     ))}
                   </select>
+                </td>
+                <td style={{ fontSize: 11, color: 'var(--text-faint)', whiteSpace: 'nowrap', paddingLeft: 8 }}>
+                  {VIM_COMMANDS[kb.action] ?? '—'}
                 </td>
                 <td>
                   <button className="kb-remove" onClick={() => removeBinding(idx)}>×</button>
