@@ -74,6 +74,7 @@ export default function App() {
   const [activeImage, setActiveImage] = useState<string | null>(null);
   const [activePdf, setActivePdf]     = useState<string | null>(null);
   const [gitRefreshKey, setGitRefreshKey] = useState(0);
+  const [focusFileTreeReq, setFocusFileTreeReq] = useState<number | undefined>(undefined);
   const [terminalOpen, setTerminalOpen]         = useState(false);
   const [terminalMounted, setTerminalMounted]   = useState(false);
   const [terminalPosition, setTerminalPosition] = useState<'bottom' | 'right'>('right');
@@ -286,6 +287,11 @@ export default function App() {
           setDialogInput('');
           break;
         case 'openSettings':   setSettingsOpen(true); break;
+        case 'focusFileTree':
+          setSidebarOpen(true);
+          setSidebarTab('files');
+          setFocusFileTreeReq(v => (v ?? 0) + 1);
+          break;
         case 'toggleTerminal':
           setTerminalOpen(v => {
             if (!v) {
@@ -585,9 +591,12 @@ export default function App() {
             ) : (
               snapshot?.vaultPath ? (
                 <FileTree
+                  key={snapshot.vaultPath}
                   tree={snapshot.tree}
                   vaultPath={snapshot.vaultPath}
                   activePath={activePath}
+                  vimMode={settings.vimMode}
+                  focusRequest={focusFileTreeReq}
                   onOpen={openNote}
                   onCreateFile={path => { setDialog({ kind: 'create-file', parentPath: path }); setDialogInput(''); }}
                   onCreateFolder={path => { setDialog({ kind: 'create-folder', parentPath: path }); setDialogInput(''); }}

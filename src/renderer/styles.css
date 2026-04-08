@@ -304,6 +304,16 @@ body {
   color: var(--accent);
 }
 
+.tree-item.vim-focused {
+  outline: 1px solid color-mix(in srgb, var(--accent) 50%, transparent);
+  outline-offset: -1px;
+  background: color-mix(in srgb, var(--accent) 10%, transparent);
+}
+
+.file-tree:focus {
+  outline: none;
+}
+
 .tree-item.selected {
   outline: 1px solid var(--accent-dim);
 }

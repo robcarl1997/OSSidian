@@ -20,7 +20,8 @@ export type AppAction =
   | 'jumpBack'
   | 'newNote'
   | 'openSettings'
-  | 'toggleTerminal';
+  | 'toggleTerminal'
+  | 'focusFileTree';
 
 export interface AppKeybinding {
   key: string;      // normalised combo, e.g. "Ctrl+P", "Ctrl+Shift+O"
@@ -68,6 +69,7 @@ export const DEFAULT_SETTINGS: AppSettings = {
     { key: 'Ctrl+PageUp',    action: 'tabPrev'        },
     { key: 'Ctrl+W',         action: 'tabClose'       },
     { key: 'Ctrl+`',         action: 'toggleTerminal' },
+    { key: 'Ctrl+Shift+E',  action: 'focusFileTree'  },
   ],
 };
 

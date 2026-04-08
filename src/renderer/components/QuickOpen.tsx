@@ -48,10 +48,12 @@ export default function QuickOpen({ allPaths, onOpen, onClose }: Props) {
   }, [results, onOpen, onClose]);
 
   const onKeyDown = (e: React.KeyboardEvent) => {
-    if (e.key === 'ArrowDown') { e.preventDefault(); setSelectedIdx(i => Math.min(i + 1, results.length - 1)); }
-    if (e.key === 'ArrowUp')   { e.preventDefault(); setSelectedIdx(i => Math.max(i - 1, 0)); }
-    if (e.key === 'Enter')     { e.preventDefault(); confirm(selectedIdx); }
-    if (e.key === 'Escape')    { onClose(); }
+    const isDown = e.key === 'ArrowDown' || (e.ctrlKey && e.key === 'j') || (e.ctrlKey && e.key === 'n');
+    const isUp   = e.key === 'ArrowUp'   || (e.ctrlKey && e.key === 'k') || (e.ctrlKey && e.key === 'p');
+    if (isDown)          { e.preventDefault(); setSelectedIdx(i => Math.min(i + 1, results.length - 1)); }
+    if (isUp)            { e.preventDefault(); setSelectedIdx(i => Math.max(i - 1, 0)); }
+    if (e.key === 'Enter')  { e.preventDefault(); confirm(selectedIdx); }
+    if (e.key === 'Escape') { onClose(); }
   };
 
   return (
