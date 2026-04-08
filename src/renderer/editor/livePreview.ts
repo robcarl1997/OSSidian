@@ -377,9 +377,25 @@ class FrontmatterWidget extends WidgetType {
     const wrap = document.createElement('div');
     wrap.className = 'cm-frontmatter';
 
-    for (const [key, value] of Object.entries(this.data)) {
+    // Render title prominently above the key-value rows
+    if (this.data.title) {
+      const h1 = document.createElement('div');
+      h1.className = 'cm-frontmatter-title';
+      h1.textContent = String(this.data.title);
+      wrap.appendChild(h1);
+    }
+
+    const entries = Object.entries(this.data).filter(([k]) => k !== 'title');
+    if (entries.length === 0) return wrap;
+
+    const table = document.createElement('div');
+    table.className = 'cm-frontmatter-table';
+    wrap.appendChild(table);
+
+    for (const [key, value] of entries) {
       const row = document.createElement('div');
       row.className = 'cm-frontmatter-row';
+      table.appendChild(row);
 
       const keyEl = document.createElement('span');
       keyEl.className = 'cm-frontmatter-key';
@@ -406,7 +422,6 @@ class FrontmatterWidget extends WidgetType {
       }
 
       row.appendChild(valEl);
-      wrap.appendChild(row);
     }
 
     return wrap;
