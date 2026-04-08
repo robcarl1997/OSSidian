@@ -610,6 +610,7 @@ export default function App() {
             onOpenDiff={openDiff}
             onOpenStagedDiff={openStagedDiff}
             refreshKey={gitRefreshKey}
+            onStagedReset={() => setActiveDiff(d => d?.readOnly ? null : d)}
             onCommit={() => {
               if (activePath) window.vaultApp.gitFileAtHead(activePath).then(setHeadContent);
             }}

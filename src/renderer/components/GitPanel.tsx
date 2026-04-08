@@ -8,6 +8,7 @@ interface GitPanelProps {
   onOpenStagedDiff?: (vaultRelPath: string) => void;
   onCommit?: () => void;
   onRestoreComplete?: (vaultRelPaths: string[]) => void;
+  onStagedReset?: () => void;
   refreshKey?: number;
 }
 
@@ -105,7 +106,7 @@ function FileRow({
 
 // ─── Main component ───────────────────────────────────────────────────────────
 
-export default function GitPanel({ vaultPath, onFileOpen, onOpenDiff, onOpenStagedDiff, onCommit, onRestoreComplete, refreshKey }: GitPanelProps) {
+export default function GitPanel({ vaultPath, onFileOpen, onOpenDiff, onOpenStagedDiff, onCommit, onRestoreComplete, onStagedReset, refreshKey }: GitPanelProps) {
   const [status,        setStatus]        = useState<GitStatus | null>(null);
   const [commits,       setCommits]       = useState<GitCommit[]>([]);
   const [commitMsg,     setCommitMsg]     = useState('');
@@ -188,7 +189,10 @@ export default function GitPanel({ vaultPath, onFileOpen, onOpenDiff, onOpenStag
 
   const stageAll    = () => withLoading(() => window.vaultApp.gitAdd(['.']));
   const stageFile   = (p: string) => withLoading(() => window.vaultApp.gitAdd([p]));
-  const unstageFile = (p: string) => withLoading(() => window.vaultApp.gitUnstage([p]));
+  const unstageFile = (p: string) => withLoading(async () => {
+    await window.vaultApp.gitUnstage([p]);
+    onStagedReset?.();
+  });
 
   const restoreFile = (p: string) => {
     setConfirmRestore(p);
@@ -232,7 +236,10 @@ export default function GitPanel({ vaultPath, onFileOpen, onOpenDiff, onOpenStag
         <div className="git-section-header">
           <span>Staged ({staged.length})</span>
           {staged.length > 0 && (
-            <button className="git-section-btn" onClick={() => withLoading(() => window.vaultApp.gitUnstage(['.']))}>
+            <button className="git-section-btn" onClick={() => withLoading(async () => {
+              await window.vaultApp.gitUnstage(['.']);
+              onStagedReset?.();
+            })}>
               Alle unstagen
             </button>
           )}
