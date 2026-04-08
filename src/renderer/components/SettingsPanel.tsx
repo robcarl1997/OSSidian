@@ -347,6 +347,18 @@ function MarkdownTab({
             onChange={e => setLocal(l => ({ ...l, attachmentFolder: e.target.value }))}
           />
         </div>
+
+        <div className="settings-row">
+          <div className="settings-label">Terminal-Position</div>
+          <select
+            className="settings-select"
+            value={local.terminalPosition ?? 'right'}
+            onChange={e => setLocal(l => ({ ...l, terminalPosition: e.target.value as 'bottom' | 'right' }))}
+          >
+            <option value="right">Rechts</option>
+            <option value="bottom">Unten</option>
+          </select>
+        </div>
       </div>
     </div>
   );

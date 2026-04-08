@@ -28,6 +28,9 @@ const IMAGE_EXTS = new Set(['png','jpg','jpeg','gif','webp','svg','bmp','ico','a
 function isImageFile(name: string): boolean {
   return IMAGE_EXTS.has((name.split('.').pop() ?? '').toLowerCase());
 }
+function isPdfFile(name: string): boolean {
+  return (name.split('.').pop() ?? '').toLowerCase() === 'pdf';
+}
 
 // ─── Tree node ────────────────────────────────────────────────────────────────
 
@@ -45,6 +48,7 @@ function TreeNode({ entry, depth, activePath, onOpen, onCtxMenu }: NodeProps) {
   const indent = depth * 14;
   const isFile  = entry.kind === 'file';
   const isImage = isFile && isImageFile(entry.name);
+  const isPdf   = isFile && isPdfFile(entry.name);
   const isActive = entry.path === activePath;
 
   const handleClick = () => {
@@ -72,12 +76,12 @@ function TreeNode({ entry, depth, activePath, onOpen, onCtxMenu }: NodeProps) {
 
         {/* Icon */}
         <span className="tree-icon">
-          {!isFile ? (open ? '📂' : '📁') : isImage ? '🖼️' : '📄'}
+          {!isFile ? (open ? '📂' : '📁') : isImage ? '🖼️' : isPdf ? '📋' : '📄'}
         </span>
 
         {/* Name */}
         <span className="tree-name">
-          {isImage ? entry.name : isFile ? entry.name.replace(/\.md$/, '') : entry.name}
+          {(isImage || isPdf) ? entry.name : isFile ? entry.name.replace(/\.md$/, '') : entry.name}
         </span>
       </div>
 
