@@ -48,7 +48,10 @@ const api: VaultApi = {
   gitCommit:  (message: string): Promise<GitCommit> => ipcRenderer.invoke('git:commit', message),
   gitLog:         (limit?: number)              => ipcRenderer.invoke('git:log', limit),
   gitFileAtHead:  (filePath: string)            => ipcRenderer.invoke('git:file-at-head', filePath),
+  gitFileAtIndex: (filePath: string)            => ipcRenderer.invoke('git:file-at-index', filePath),
   gitRestore:     (paths: string[])             => ipcRenderer.invoke('git:restore', paths),
+  stageHunk:      (relPath: string, fromLine: number, toLine: number) =>
+    ipcRenderer.invoke('git:stage-hunk', relPath, fromLine, toLine),
   writeContext:   (filePath: string | null, selection: string) =>
     ipcRenderer.invoke('context:write', filePath, selection),
 };

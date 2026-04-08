@@ -5,6 +5,7 @@ interface GitPanelProps {
   vaultPath: string | null;
   onFileOpen: (path: string) => void;
   onOpenDiff?: (vaultRelPath: string) => void;
+  onOpenStagedDiff?: (vaultRelPath: string) => void;
   onCommit?: () => void;
   onRestoreComplete?: (vaultRelPaths: string[]) => void;
 }
@@ -103,7 +104,7 @@ function FileRow({
 
 // ─── Main component ───────────────────────────────────────────────────────────
 
-export default function GitPanel({ vaultPath, onFileOpen, onOpenDiff, onCommit, onRestoreComplete }: GitPanelProps) {
+export default function GitPanel({ vaultPath, onFileOpen, onOpenDiff, onOpenStagedDiff, onCommit, onRestoreComplete }: GitPanelProps) {
   const [status,        setStatus]        = useState<GitStatus | null>(null);
   const [commits,       setCommits]       = useState<GitCommit[]>([]);
   const [commitMsg,     setCommitMsg]     = useState('');
@@ -174,7 +175,8 @@ export default function GitPanel({ vaultPath, onFileOpen, onOpenDiff, onCommit, 
   }
 
   const staged   = status.files.filter(f => isStaged(f));
-  const unstaged = status.files.filter(f => !isStaged(f) && isUnstaged(f) && f.index !== '?');
+  // Include partially-staged files (index='M', workingDir='M') in unstaged too
+  const unstaged = status.files.filter(f => isUnstaged(f) && f.index !== '?');
   const untracked = status.files.filter(f => f.index === '?' && f.workingDir === '?');
   const hasStaged = staged.length > 0;
 
@@ -233,7 +235,7 @@ export default function GitPanel({ vaultPath, onFileOpen, onOpenDiff, onCommit, 
           <div className="git-empty-hint">Keine gestagten Änderungen</div>
         ) : staged.map(f => (
           <FileRow key={f.path} file={f} staged vaultPath={vaultPath}
-            onAction={unstageFile} onOpen={onFileOpen} onDiff={onOpenDiff} />
+            onAction={unstageFile} onOpen={onFileOpen} onDiff={onOpenStagedDiff} />
         ))}
       </div>
 
