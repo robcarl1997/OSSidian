@@ -151,6 +151,13 @@ export default function App() {
     window.vaultApp.search(deferredSearch).then(setSearchResults);
   }, [deferredSearch]);
 
+  // ─── Auto-focus file tree when sidebar opens on files tab ───────────────
+  useEffect(() => {
+    if (sidebarOpen && sidebarTab === 'files') {
+      setFocusFileTreeReq(v => (v ?? 0) + 1);
+    }
+  }, [sidebarOpen, sidebarTab]);
+
   // ─── Focus dialog input ──────────────────────────────────────────────────
   useEffect(() => {
     if (dialog) {
