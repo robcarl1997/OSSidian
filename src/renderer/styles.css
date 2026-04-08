@@ -659,6 +659,10 @@ body {
 .cm-ext-link { color: var(--accent-dim); cursor: pointer; }
 .cm-ext-link:hover { text-decoration: underline; }
 
+/* Link syntax color while editing (active line) */
+.cm-link-text { color: var(--link); }
+.cm-link-url  { color: var(--text-muted); }
+
 /* Embedded images */
 .cm-image-widget {
   display: block;
@@ -2130,13 +2134,14 @@ body {
 
 /* Deleted chunk widget — make removed lines readable at full font size */
 .diff-container .cm-deletedChunk {
-  min-height: 1.4em;
-  padding: 2px 0;
+  min-height: 1.6em;
+  padding: 4px 0;
 }
 .diff-container .cm-deletedChunk .cm-deletedLine {
   display: block;
-  min-height: 1.4em;
-  padding: 0 16px;
+  min-height: 1.6em;
+  padding: 1px 16px;
+  font-size: 1em;
 }
 .diff-container .cm-deletedChunk del {
   text-decoration: none;

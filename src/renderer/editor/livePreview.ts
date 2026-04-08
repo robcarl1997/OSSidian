@@ -328,6 +328,51 @@ function isImagePath(src: string): boolean {
 
 interface Deco { from: number; to: number; value: Decoration }
 
+/**
+ * Applies lightweight decorations to the line under the cursor:
+ * - Headings keep their size/weight (the # prefix stays visible as raw text)
+ * - Markdown links [text](url) get link-colour marks so the syntax is highlighted
+ */
+function processActiveLine(lineFrom: number, text: string, out: Deco[], config: LivePreviewConfig): void {
+  // Headings: style the whole line (including # sigils) while editing
+  const headingM = text.match(/^(#{1,6})\s+/);
+  if (headingM) {
+    const level = headingM[1].length;
+    pushMark(out, lineFrom, lineFrom + text.length, `cm-h${level}`);
+    return;
+  }
+
+  // Wikilinks [[note]] / [[note|alias]] / [[note#anchor]]
+  const wikiRe = /!\[\[([^\]\r\n]+?)\]\]|\[\[([^\]\r\n]+?)\]\]/g;
+  let wm: RegExpExecArray | null;
+  while ((wm = wikiRe.exec(text)) !== null) {
+    if (wm[0].startsWith('!')) continue; // skip image wikilinks
+    const inner = wm[2];
+    const pipeIdx = inner.indexOf('|');
+    const hashIdx = inner.indexOf('#');
+    let target = inner;
+    if (pipeIdx !== -1)      target = inner.slice(0, pipeIdx).split('#')[0].trim();
+    else if (hashIdx !== -1) target = inner.slice(0, hashIdx).trim();
+    const exists = noteExists(target, config.allPaths);
+    const innerStart = lineFrom + wm.index + 2;                      // skip '[['
+    const innerEnd   = lineFrom + wm.index + wm[0].length - 2;       // before ']]'
+    pushMark(out, innerStart, innerEnd, exists ? 'cm-wiki-link' : 'cm-wiki-link-broken');
+  }
+
+  // Markdown links [text](url): colour the syntax components
+  const linkRe = /\[([^\]]+)\]\(([^)]+)\)/g;
+  let lm: RegExpExecArray | null;
+  while ((lm = linkRe.exec(text)) !== null) {
+    const bracketOpen  = lineFrom + lm.index;
+    const bracketClose = bracketOpen + 1 + lm[1].length;
+    const parenOpen    = bracketClose + 1;
+    const parenClose   = parenOpen + lm[2].length;
+    pushMark(out, bracketOpen + 1, bracketClose, 'cm-link-text');
+    if (parenOpen < parenClose)
+      pushMark(out, parenOpen, parenClose, 'cm-link-url');
+  }
+}
+
 function buildDecorations(view: EditorView): DecorationSet {
   const config      = view.state.facet(livePreviewConfig);
   const activeLines = activeLineNumbers(view);
@@ -339,6 +384,8 @@ function buildDecorations(view: EditorView): DecorationSet {
       const line = view.state.doc.lineAt(pos);
       if (!activeLines.has(line.number)) {
         processLine(line.from, line.text, raw, config);
+      } else {
+        processActiveLine(line.from, line.text, raw, config);
       }
       pos = line.to + 1;
     }
@@ -556,7 +603,7 @@ const INLINE_PATTERNS: Array<{
   // Markdown links: [text](url)
   {
     re: /\[([^\]]+)\]\(([^)]+)\)/g,
-    handle(m, lineFrom, out) {
+    handle(m, lineFrom, out, config) {
       const text = m[1];
       const href = m[2];
       const isExt = /^https?:\/\//.test(href);
@@ -567,7 +614,7 @@ const INLINE_PATTERNS: Array<{
         value: Decoration.replace({
           widget: isExt
             ? new ExtLinkWidget(text, href)
-            : new WikiLinkWidget(text, href.replace(/\.md$/, ''), false),
+            : new WikiLinkWidget(text, href.replace(/\.md$/, ''), noteExists(href.replace(/\.md$/, '').split('/').pop() ?? '', config.allPaths)),
         }),
       });
     },

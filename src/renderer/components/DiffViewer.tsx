@@ -37,12 +37,13 @@ function makeEditorTheme(theme: Theme, fontFamily: string, fontSize: number, lin
     // Deleted chunk widget — make removed lines legible
     '.cm-deletedChunk': {
       background: isDark ? '#3d1f2a' : theme === 'sepia' ? '#f0cfc0' : '#fce8e8',
-      padding: '2px 0',
+      padding: '4px 0',
     },
     '.cm-deletedChunk .cm-deletedLine': {
       display: 'block',
-      minHeight: `${lineHeight}em`,
-      padding: '0 16px',
+      minHeight: `${lineHeight * 1.4}em`,
+      padding: '1px 16px',
+      fontSize: `${fontSize}px`,
       lineHeight: String(lineHeight),
       color: isDark ? '#f38ba8' : theme === 'sepia' ? '#c05030' : '#c0392b',
     },
