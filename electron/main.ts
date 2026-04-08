@@ -409,8 +409,7 @@ function setupIPC(): void {
   });
 
   // ── git:stage-hunk ───────────────────────────────────────────────────────
-  // Accepts a vault-relative path and the A-side (index) first line of the chunk.
-  // The diff view shows index vs working tree, so we diff without HEAD here too.
+  // Accepts a vault-relative path and the A-side (HEAD) first line of the chunk.
   // Uses -U0 so every discrete change is its own hunk (no context merging nearby
   // changes together). Matches the hunk by exact A-side start line and applies
   // it with -C0 so no context lines need to match.
@@ -418,8 +417,8 @@ function setupIPC(): void {
     if (!vaultPath) throw new Error('Kein Vault geöffnet');
     const git = simpleGit(vaultPath);
 
-    // No HEAD → diff is index vs working tree (matches what the diff view shows)
-    const diffOutput = await git.diff(['-U0', '--', relPath]);
+    // -U0 = zero context lines → each discrete change is a separate @@ hunk
+    const diffOutput = await git.diff(['-U0', 'HEAD', '--', relPath]);
     if (!diffOutput) return; // no changes
 
     const lines = diffOutput.split('\n');
