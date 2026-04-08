@@ -155,6 +155,8 @@ export default function App() {
   useEffect(() => {
     if (sidebarOpen && sidebarTab === 'files') {
       setFocusFileTreeReq(v => (v ?? 0) + 1);
+    } else {
+      setTimeout(() => editorRef.current?.focus(), 0);
     }
   }, [sidebarOpen, sidebarTab]);
 
