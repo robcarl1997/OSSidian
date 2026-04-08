@@ -525,46 +525,70 @@ export default function App() {
       </div>
     </div>
     <div className={`app${sidebarOpen ? '' : ' sidebar-hidden'}`}>
-      {/* ── Sidebar ──────────────────────────────────────────────────────── */}
+      {/* ── Activity bar ─────────────────────────────────────────────────── */}
+      <nav className="activity-bar">
+        <div className="activity-bar-items">
+          <button
+            className={`activity-btn${sidebarTab === 'files' && sidebarOpen ? ' active' : ''}`}
+            title="Dateien"
+            onClick={() => sidebarTab === 'files' ? setSidebarOpen(v => !v) : (setSidebarTab('files'), setSidebarOpen(true))}
+          >
+            <svg width="18" height="18" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round">
+              <rect x="2" y="1" width="9" height="12" rx="1.2"/>
+              <path d="M11 1l3 3v9a1.2 1.2 0 01-1.2 1.2" opacity=".5"/>
+              <line x1="4" y1="5" x2="9" y2="5"/>
+              <line x1="4" y1="8" x2="9" y2="8"/>
+              <line x1="4" y1="11" x2="7" y2="11"/>
+            </svg>
+          </button>
+          <button
+            className={`activity-btn${sidebarTab === 'git' && sidebarOpen ? ' active' : ''}`}
+            title="Git"
+            onClick={() => sidebarTab === 'git' ? setSidebarOpen(v => !v) : (setSidebarTab('git'), setSidebarOpen(true))}
+          >
+            <svg width="18" height="18" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round">
+              <circle cx="5" cy="3" r="1.5" fill="currentColor" stroke="none"/>
+              <circle cx="5" cy="13" r="1.5" fill="currentColor" stroke="none"/>
+              <circle cx="11" cy="6" r="1.5" fill="currentColor" stroke="none"/>
+              <line x1="5" y1="4.5" x2="5" y2="11.5"/>
+              <path d="M5 4.5 C5 7.5 11 5.5 11 7.5"/>
+            </svg>
+          </button>
+        </div>
+        <div className="activity-bar-bottom">
+          <button className="activity-btn" title="Einstellungen" onClick={() => setSettingsOpen(true)}>
+            <svg width="18" height="18" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round">
+              <circle cx="8" cy="8" r="2.2"/>
+              <path d="M8 1v2M8 13v2M1 8h2M13 8h2M3.1 3.1l1.4 1.4M11.5 11.5l1.4 1.4M3.1 12.9l1.4-1.4M11.5 4.5l1.4-1.4" strokeWidth="1.3"/>
+            </svg>
+          </button>
+          <button className="activity-btn" title="Vault öffnen" onClick={selectVault}>
+            <svg width="18" height="18" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round">
+              <path d="M1 4.5C1 3.7 1.7 3 2.5 3H6l1.5 2H13.5C14.3 5 15 5.7 15 6.5v6c0 .8-.7 1.5-1.5 1.5h-11C1.7 14 1 13.3 1 12.5v-8z"/>
+            </svg>
+          </button>
+        </div>
+      </nav>
+
+      {/* ── Side panel ───────────────────────────────────────────────────── */}
       <aside className="sidebar">
         {/* Header */}
         <div className="sidebar-header">
           <span className={`vault-name${!snapshot?.vaultPath ? ' no-vault' : ''}`}>
-            {snapshot?.vaultPath
-              ? snapshot.vaultPath.replace(/\\/g, '/').split('/').pop()
-              : 'Kein Vault'}
+            {sidebarTab === 'files'
+              ? (snapshot?.vaultPath?.replace(/\\/g, '/').split('/').pop() ?? 'Kein Vault')
+              : 'Git'}
           </span>
-          <button
-            className="icon-btn"
-            title="Neue Notiz"
-            onClick={() => {
-              setDialog({ kind: 'create-file', parentPath: snapshot?.vaultPath ?? '' });
-              setDialogInput('');
-            }}
-          >＋</button>
-          <button
-            className="icon-btn"
-            title="Einstellungen"
-            onClick={() => setSettingsOpen(true)}
-          >⚙</button>
-        </div>
-
-        {/* Sidebar tabs */}
-        <div className="sidebar-tabs">
-          <button
-            className={`sidebar-tab-btn${sidebarTab === 'files' ? ' active' : ''}`}
-            onClick={() => setSidebarTab('files')}
-            title="Dateien"
-          >
-            📄 Dateien
-          </button>
-          <button
-            className={`sidebar-tab-btn${sidebarTab === 'git' ? ' active' : ''}`}
-            onClick={() => setSidebarTab('git')}
-            title="Git"
-          >
-            ⎇ Git
-          </button>
+          {sidebarTab === 'files' && (
+            <button
+              className="icon-btn"
+              title="Neue Notiz"
+              onClick={() => {
+                setDialog({ kind: 'create-file', parentPath: snapshot?.vaultPath ?? '' });
+                setDialogInput('');
+              }}
+            >＋</button>
+          )}
         </div>
 
         {sidebarTab === 'files' ? (
@@ -635,13 +659,6 @@ export default function App() {
             onRestoreComplete={handleRestoreComplete}
           />
         )}
-
-        {/* Footer */}
-        <div className="sidebar-footer">
-          <button className="sidebar-footer-btn" onClick={selectVault}>
-            📂 Vault öffnen
-          </button>
-        </div>
       </aside>
 
       {/* ── Workspace ────────────────────────────────────────────────────── */}
