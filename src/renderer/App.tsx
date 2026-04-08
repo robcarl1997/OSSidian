@@ -73,6 +73,7 @@ export default function App() {
   const [activeDiff, setActiveDiff]   = useState<{ path: string; head: string | null; current: string; readOnly?: boolean } | null>(null);
   const [activeImage, setActiveImage] = useState<string | null>(null);
   const [activePdf, setActivePdf]     = useState<string | null>(null);
+  const [gitRefreshKey, setGitRefreshKey] = useState(0);
   const [terminalOpen, setTerminalOpen]         = useState(false);
   const [terminalMounted, setTerminalMounted]   = useState(false);
   const [terminalPosition, setTerminalPosition] = useState<'bottom' | 'right'>('right');
@@ -608,6 +609,7 @@ export default function App() {
             onFileOpen={openNote}
             onOpenDiff={openDiff}
             onOpenStagedDiff={openStagedDiff}
+            refreshKey={gitRefreshKey}
             onCommit={() => {
               if (activePath) window.vaultApp.gitFileAtHead(activePath).then(setHeadContent);
             }}
@@ -664,6 +666,7 @@ export default function App() {
                 setActiveDiff(d => d ? { ...d, current: newContent } : d);
               }}
               onClose={() => setActiveDiff(null)}
+              onHunkStaged={() => setGitRefreshKey(k => k + 1)}
             />
           ) : activeTab ? (
             <>

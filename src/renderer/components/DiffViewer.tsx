@@ -64,6 +64,7 @@ interface DiffViewerProps {
   lineHeight: number;
   onSave: (newContent: string) => void;
   onClose: () => void;
+  onHunkStaged?: () => void;
 }
 
 // ─── Component ────────────────────────────────────────────────────────────────
@@ -80,16 +81,19 @@ export default function DiffViewer({
   lineHeight,
   onSave,
   onClose,
+  onHunkStaged,
 }: DiffViewerProps) {
   const containerRef = useRef<HTMLDivElement>(null);
-  const mergeRef     = useRef<MergeView | null>(null);
-  const onSaveRef    = useRef(onSave);
-  const saveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const mergeRef         = useRef<MergeView | null>(null);
+  const onSaveRef        = useRef(onSave);
+  const onHunkStagedRef  = useRef(onHunkStaged);
+  const saveTimerRef     = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const relPath = path.startsWith(vaultPath + '/') ? path.slice(vaultPath.length + 1) : path;
   const name    = path.split('/').pop() ?? path;
 
   useEffect(() => { onSaveRef.current = onSave; });
+  useEffect(() => { onHunkStagedRef.current = onHunkStaged; });
 
   // ─── Create / destroy MergeView ──────────────────────────────────────────
   useEffect(() => {
@@ -162,7 +166,9 @@ export default function DiffViewer({
           const toLine   = chunk.fromA < chunk.toA
             ? aDoc.lineAt(Math.min(chunk.toA - 1, aDoc.length > 0 ? aDoc.length - 1 : 0)).number
             : fromLine;
-          window.vaultApp.stageHunk(stableRelPath, fromLine, toLine).catch(console.error);
+          window.vaultApp.stageHunk(stableRelPath, fromLine, toLine)
+            .then(() => onHunkStagedRef.current?.())
+            .catch(console.error);
         });
 
         wrapper.appendChild(revertBtn);

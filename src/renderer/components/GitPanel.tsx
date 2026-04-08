@@ -8,6 +8,7 @@ interface GitPanelProps {
   onOpenStagedDiff?: (vaultRelPath: string) => void;
   onCommit?: () => void;
   onRestoreComplete?: (vaultRelPaths: string[]) => void;
+  refreshKey?: number;
 }
 
 // ─── File status helpers ──────────────────────────────────────────────────────
@@ -104,7 +105,7 @@ function FileRow({
 
 // ─── Main component ───────────────────────────────────────────────────────────
 
-export default function GitPanel({ vaultPath, onFileOpen, onOpenDiff, onOpenStagedDiff, onCommit, onRestoreComplete }: GitPanelProps) {
+export default function GitPanel({ vaultPath, onFileOpen, onOpenDiff, onOpenStagedDiff, onCommit, onRestoreComplete, refreshKey }: GitPanelProps) {
   const [status,        setStatus]        = useState<GitStatus | null>(null);
   const [commits,       setCommits]       = useState<GitCommit[]>([]);
   const [commitMsg,     setCommitMsg]     = useState('');
@@ -124,12 +125,17 @@ export default function GitPanel({ vaultPath, onFileOpen, onOpenDiff, onOpenStag
     }
   }, [vaultPath]);
 
-  // Initial load + refresh when vault changes
+  // Initial load + refresh when vault changes or external trigger fires
   useEffect(() => {
     refresh();
     const unsub = window.vaultApp.onVaultChanged(() => refresh());
     return unsub;
   }, [refresh]);
+
+  useEffect(() => {
+    if (refreshKey !== undefined) refresh();
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [refreshKey]);
 
   const loadLog = useCallback(async () => {
     const log = await window.vaultApp.gitLog(30);

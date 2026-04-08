@@ -464,7 +464,7 @@ function setupIPC(): void {
       }
     }
 
-    throw new Error(`Kein Hunk gefunden für ${relPath} Zeile ${fromLine}–${toLine}`);
+    throw new Error(`Kein Hunk gefunden für ${relPath} Zeile ${fromLine}–${_toLine}`);
   });
 
   // ── git:file-at-head ─────────────────────────────────────────────────────
