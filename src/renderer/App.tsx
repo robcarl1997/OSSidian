@@ -282,7 +282,10 @@ export default function App() {
       const bindings = settings.appKeybindings ?? DEFAULT_SETTINGS.appKeybindings;
       const binding = bindings.find(kb => kb.key === combo);
       if (!binding) return;
+      // Capture-phase handler runs before CodeMirror/Vim — stop propagation so
+      // the editor never sees this keystroke.
       e.preventDefault();
+      e.stopPropagation();
       switch (binding.action) {
         case 'quickOpen':     setQuickOpenOpen(true); break;
         case 'toggleSidebar': setSidebarOpen(v => !v); break;
@@ -335,7 +338,7 @@ export default function App() {
     window.addEventListener('obsidian:quick-open',     onQuickOpen     as EventListener);
     window.addEventListener('obsidian:toggle-sidebar', onToggleSidebar as EventListener);
     window.addEventListener('obsidian:toggle-outline', onToggleOutline as EventListener);
-    window.addEventListener('keydown', onKeyDown);
+    window.addEventListener('keydown', onKeyDown, true);
 
     return () => {
       window.removeEventListener('obsidian:tab-next',       onTabNext       as EventListener);
@@ -345,7 +348,7 @@ export default function App() {
       window.removeEventListener('obsidian:quick-open',     onQuickOpen     as EventListener);
       window.removeEventListener('obsidian:toggle-sidebar', onToggleSidebar as EventListener);
       window.removeEventListener('obsidian:toggle-outline', onToggleOutline as EventListener);
-      window.removeEventListener('keydown', onKeyDown);
+      window.removeEventListener('keydown', onKeyDown, true);
     };
   }, [switchTab, activePath, closeTab, jumpBack, settings.appKeybindings, snapshot, sidebarOpen, sidebarTab]);
 
