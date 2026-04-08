@@ -670,23 +670,32 @@ const MarkdownEditor = forwardRef<MarkdownEditorHandle, MarkdownEditorProps>(fun
     const el = containerRef.current;
     if (!el) return;
 
+    const ALLOWED_TYPES: Record<string, { prefix: string; ext: string }> = {
+      'image/png':               { prefix: 'Pasted image', ext: 'png' },
+      'image/jpeg':              { prefix: 'Pasted image', ext: 'jpg' },
+      'image/gif':               { prefix: 'Pasted image', ext: 'gif' },
+      'image/webp':              { prefix: 'Pasted image', ext: 'webp' },
+      'image/svg+xml':           { prefix: 'Pasted image', ext: 'svg' },
+      'application/pdf':         { prefix: 'Pasted file',  ext: 'pdf' },
+    };
+
     const handlePaste = (e: ClipboardEvent) => {
       const items = e.clipboardData?.items;
       if (!items) return;
 
       for (const item of Array.from(items)) {
-        if (!item.type.startsWith('image/')) continue;
+        const info = ALLOWED_TYPES[item.type];
+        if (!info) continue;
 
         const file = item.getAsFile();
         if (!file) continue;
 
         e.preventDefault();
 
-        const ext = item.type.split('/')[1]?.replace('jpeg', 'jpg') || 'png';
         const now = new Date();
         const pad = (n: number) => String(n).padStart(2, '0');
         const dateStr = `${now.getFullYear()}-${pad(now.getMonth() + 1)}-${pad(now.getDate())} ${pad(now.getHours())}-${pad(now.getMinutes())}-${pad(now.getSeconds())}`;
-        const filename = `Pasted image ${dateStr}.${ext}`;
+        const filename = `${info.prefix} ${dateStr}.${info.ext}`;
 
         const reader = new FileReader();
         reader.onload = async () => {
@@ -699,9 +708,10 @@ const MarkdownEditor = forwardRef<MarkdownEditorHandle, MarkdownEditorProps>(fun
             const view = viewRef.current;
             if (!view) return;
             const pos = view.state.selection.main.head;
+            const isImage = item.type.startsWith('image/');
             const insert = linkFormatRef.current === 'wikilink'
-              ? `![[${relPath}]]`
-              : `![${filename}](${relPath})`;
+              ? (isImage ? `![[${relPath}]]` : `[[${relPath}]]`)
+              : (isImage ? `![${filename}](${relPath})` : `[${filename}](${relPath})`);
             view.dispatch({
               changes: { from: pos, insert },
               selection: { anchor: pos + insert.length },
@@ -712,7 +722,7 @@ const MarkdownEditor = forwardRef<MarkdownEditorHandle, MarkdownEditorProps>(fun
           }
         };
         reader.readAsDataURL(file);
-        return; // handle only first image
+        return; // handle only first item
       }
     };
 
