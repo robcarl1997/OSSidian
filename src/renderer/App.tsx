@@ -665,6 +665,7 @@ export default function App() {
               }}
             >＋</button>
           )}
+          <button className="icon-btn" title="Einstellungen" onClick={() => setSettingsOpen(true)}>⚙</button>
         </div>
 
         {sidebarTab === 'files' ? (
