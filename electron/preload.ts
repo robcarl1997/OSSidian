@@ -50,8 +50,8 @@ const api: VaultApi = {
   gitFileAtHead:  (filePath: string)            => ipcRenderer.invoke('git:file-at-head', filePath),
   gitFileAtIndex: (filePath: string)            => ipcRenderer.invoke('git:file-at-index', filePath),
   gitRestore:     (paths: string[])             => ipcRenderer.invoke('git:restore', paths),
-  stageHunk:      (relPath: string, fromLine: number, toLine: number) =>
-    ipcRenderer.invoke('git:stage-hunk', relPath, fromLine, toLine),
+  stageHunk:      (relPath: string, fromLineA: number, toLineA: number, isPureInsertion: boolean, newContent: string[]) =>
+    ipcRenderer.invoke('git:stage-hunk', relPath, fromLineA, toLineA, isPureInsertion, newContent),
   writeContext:   (filePath: string | null, selection: string) =>
     ipcRenderer.invoke('context:write', filePath, selection),
 };

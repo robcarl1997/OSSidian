@@ -409,62 +409,55 @@ function setupIPC(): void {
   });
 
   // ── git:stage-hunk ───────────────────────────────────────────────────────
-  // Accepts a vault-relative path and the A-side (HEAD) first line of the chunk.
-  // Uses -U0 so every discrete change is its own hunk (no context merging nearby
-  // changes together). Matches the hunk by exact A-side start line and applies
-  // it with -C0 so no context lines need to match.
-  ipcMain.handle('git:stage-hunk', async (_e, relPath: string, fromLine: number, _toLine: number) => {
+  // Directly manipulates the index: reads the current index content, applies
+  // the chunk (insert/replace/delete lines), writes a new blob with hash-object,
+  // then updates the index entry with update-index. This avoids git-apply entirely
+  // and prevents line-order corruption that can occur when reconstructing patches.
+  ipcMain.handle('git:stage-hunk', async (
+    _e,
+    relPath: string,
+    fromLineA: number,
+    toLineA: number,
+    isPureInsertion: boolean,
+    newContent: string[],
+  ) => {
     if (!vaultPath) throw new Error('Kein Vault geöffnet');
     const git = simpleGit(vaultPath);
 
-    // -U0 = zero context lines → each discrete change is a separate @@ hunk
-    const diffOutput = await git.diff(['-U0', 'HEAD', '--', relPath]);
-    if (!diffOutput) return; // no changes
+    // Read current index content for this file
+    const indexContent = await git.show([`:${relPath}`]);
 
-    const lines = diffOutput.split('\n');
-
-    // Collect file header (everything before the first @@)
-    let headerEnd = 0;
-    for (let i = 0; i < lines.length; i++) {
-      if (lines[i].startsWith('@@')) { headerEnd = i; break; }
-    }
-    const fileHeader = lines.slice(0, headerEnd).join('\n');
-
-    // Find all hunk starts
-    const hunkStarts: number[] = [];
-    lines.forEach((l, i) => { if (l.startsWith('@@')) hunkStarts.push(i); });
-
-    // Find the hunk whose A-side start line covers fromLine
-    for (let idx = 0; idx < hunkStarts.length; idx++) {
-      const start = hunkStarts[idx];
-      const end   = hunkStarts[idx + 1] ?? lines.length;
-
-      const m = /^@@ -(\d+)(?:,(\d+))? /.exec(lines[start]);
-      if (!m) continue;
-
-      const hunkAStart = parseInt(m[1]);
-      const hunkACount = m[2] !== undefined ? parseInt(m[2]) : 1;
-      // For pure insertions hunkACount=0; the insertion is "after" hunkAStart.
-      // fromLine is the line AT which CM shows the insertion → hunkAStart or hunkAStart+1.
-      const hunkAEnd = hunkAStart + Math.max(hunkACount - 1, 0);
-
-      if (fromLine >= hunkAStart && fromLine <= hunkAEnd + 1) {
-        const hunkContent = lines.slice(start, end).join('\n');
-        const patch = `${fileHeader}\n${hunkContent}\n`;
-
-        const tmpFile = path.join(os.tmpdir(), 'obsidian-hunk.patch');
-        fs.writeFileSync(tmpFile, patch, 'utf-8');
-        try {
-          // -C0: require 0 context lines to match (safe because -U0 has no context)
-          await git.raw(['apply', '--cached', '-C0', '--unidiff-zero', '--whitespace=nowarn', tmpFile]);
-        } finally {
-          try { fs.unlinkSync(tmpFile); } catch { /* ignore */ }
-        }
-        return;
-      }
+    // Split into lines (preserve the trailing-newline status separately)
+    const hasTrailingNewline = indexContent.endsWith('\n');
+    const indexLines = indexContent.split('\n');
+    if (hasTrailingNewline && indexLines[indexLines.length - 1] === '') {
+      indexLines.pop(); // remove the empty string from the trailing \n
     }
 
-    throw new Error(`Kein Hunk gefunden für ${relPath} Zeile ${fromLine}–${_toLine}`);
+    // Apply the change:
+    //   isPureInsertion: insert newContent BEFORE line fromLineA (nothing removed)
+    //   substitution/deletion: replace lines fromLineA..toLineA with newContent
+    const insertAt    = fromLineA - 1; // 0-based
+    const removeCount = isPureInsertion ? 0 : (toLineA - fromLineA + 1);
+
+    const newIndexLines = [
+      ...indexLines.slice(0, insertAt),
+      ...newContent,
+      ...indexLines.slice(insertAt + removeCount),
+    ];
+
+    const newIndexContent = newIndexLines.join('\n') + (hasTrailingNewline ? '\n' : '');
+
+    // Write to a temp file, hash it, and update the index entry
+    const tmpFile = path.join(os.tmpdir(), 'obsidian-stage.tmp');
+    fs.writeFileSync(tmpFile, newIndexContent, 'utf-8');
+    try {
+      const hashOutput = await git.raw(['hash-object', '-w', tmpFile]);
+      const hash = hashOutput.trim();
+      await git.raw(['update-index', '--cacheinfo', `100644,${hash},${relPath}`]);
+    } finally {
+      try { fs.unlinkSync(tmpFile); } catch { /* ignore */ }
+    }
   });
 
   // ── git:file-at-head ─────────────────────────────────────────────────────

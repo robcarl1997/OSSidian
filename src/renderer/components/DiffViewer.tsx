@@ -162,13 +162,28 @@ export default function DiffViewer({
           if (chunkIdx < 0 || !mv2) return;
           const chunk = mv2.chunks[chunkIdx];
           if (!chunk) return;
-          // Pass the A-side (HEAD) line range to main — it generates the patch via git diff
+
           const aDoc = mv2.a.state.doc;
-          const fromLine = aDoc.lineAt(chunk.fromA).number;
-          const toLine   = chunk.fromA < chunk.toA
+          const bDoc = mv2.b.state.doc;
+          const isPureInsertion = chunk.fromA === chunk.toA;
+
+          // A-side (index): range of lines to remove (1-based)
+          const fromLineA = aDoc.lineAt(chunk.fromA).number;
+          const toLineA   = chunk.fromA < chunk.toA
             ? aDoc.lineAt(Math.min(chunk.toA - 1, aDoc.length > 0 ? aDoc.length - 1 : 0)).number
-            : fromLine;
-          window.vaultApp.stageHunk(stableRelPath, fromLine, toLine)
+            : fromLineA;
+
+          // B-side (working tree): lines to insert from the WT content
+          const newContent: string[] = [];
+          if (chunk.fromB < chunk.toB) {
+            const fromLineB = bDoc.lineAt(chunk.fromB).number;
+            const toLineB   = bDoc.lineAt(Math.min(chunk.toB - 1, bDoc.length > 0 ? bDoc.length - 1 : 0)).number;
+            for (let ln = fromLineB; ln <= toLineB; ln++) {
+              newContent.push(bDoc.line(ln).text);
+            }
+          }
+
+          window.vaultApp.stageHunk(stableRelPath, fromLineA, toLineA, isPureInsertion, newContent)
             .then(() => onHunkStagedRef.current?.())
             .catch(console.error);
         });

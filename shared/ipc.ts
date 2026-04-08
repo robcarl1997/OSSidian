@@ -174,7 +174,7 @@ export interface VaultApi {
   gitFileAtHead(filePath: string): Promise<string | null>;
   gitFileAtIndex(filePath: string): Promise<string | null>;
   gitRestore(paths: string[]): Promise<void>;
-  stageHunk(relPath: string, fromLine: number, toLine: number): Promise<void>;
+  stageHunk(relPath: string, fromLineA: number, toLineA: number, isPureInsertion: boolean, newContent: string[]): Promise<void>;
   writeContext(filePath: string | null, selection: string): Promise<string>;
 }
 
