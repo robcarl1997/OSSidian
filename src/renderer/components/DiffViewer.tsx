@@ -58,6 +58,7 @@ interface DiffViewerProps {
   headContent: string | null;
   currentContent: string;
   readOnly?: boolean;
+  aLabel?: string;
   theme: Theme;
   fontFamily: string;
   fontSize: number;
@@ -75,6 +76,7 @@ export default function DiffViewer({
   headContent,
   currentContent,
   readOnly = false,
+  aLabel = 'HEAD',
   theme,
   fontFamily,
   fontSize,
@@ -195,7 +197,7 @@ export default function DiffViewer({
       {/* Header */}
       <div className="diff-header">
         <div className="diff-labels">
-          <span className="diff-label diff-label--a">HEAD</span>
+          <span className="diff-label diff-label--a">{aLabel}</span>
           <span className="diff-filename">{name}</span>
           <span className="diff-label diff-label--b">{readOnly ? 'Index' : 'Arbeitskopie'}</span>
         </div>

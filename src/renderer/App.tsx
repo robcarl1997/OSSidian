@@ -70,7 +70,7 @@ export default function App() {
   const [sidebarTab, setSidebarTab]     = useState<'files' | 'git'>('files');
   const [outlineOpen, setOutlineOpen]   = useState(false);
   const [headContent, setHeadContent] = useState<string | null | undefined>(undefined);
-  const [activeDiff, setActiveDiff]   = useState<{ path: string; head: string | null; current: string; readOnly?: boolean } | null>(null);
+  const [activeDiff, setActiveDiff]   = useState<{ path: string; head: string | null; current: string; readOnly?: boolean; aLabel?: string } | null>(null);
   const [activeImage, setActiveImage] = useState<string | null>(null);
   const [activePdf, setActivePdf]     = useState<string | null>(null);
   const [gitRefreshKey, setGitRefreshKey] = useState(0);
@@ -380,16 +380,16 @@ export default function App() {
     }
   }, []);
 
-  // ─── Open diff view (working tree vs HEAD) ──────────────────────────────
+  // ─── Open diff view (index vs working tree — shows only unstaged changes) ──
   const openDiff = useCallback(async (vaultRelPath: string) => {
     if (!snapshot?.vaultPath) return;
     const fullPath = `${snapshot.vaultPath}/${vaultRelPath}`;
-    const [head, note] = await Promise.all([
-      window.vaultApp.gitFileAtHead(fullPath),
+    const [indexed, note] = await Promise.all([
+      window.vaultApp.gitFileAtIndex(fullPath),
       window.vaultApp.openNote(fullPath).catch(() => null),
     ]);
     const current = tabs.find(t => t.path === fullPath)?.raw ?? note?.raw ?? '';
-    setActiveDiff({ path: fullPath, head, current });
+    setActiveDiff({ path: fullPath, head: indexed, current, aLabel: 'Index' });
   }, [snapshot?.vaultPath, tabs]);
 
   // ─── Open staged diff view (index vs HEAD) ───────────────────────────────
@@ -655,6 +655,7 @@ export default function App() {
               headContent={activeDiff.head}
               currentContent={activeDiff.current}
               readOnly={activeDiff.readOnly}
+              aLabel={activeDiff.aLabel}
               theme={settings.theme}
               fontFamily={settings.editorFontFamily}
               fontSize={settings.editorFontSize}
@@ -666,7 +667,14 @@ export default function App() {
                 setActiveDiff(d => d ? { ...d, current: newContent } : d);
               }}
               onClose={() => setActiveDiff(null)}
-              onHunkStaged={() => setGitRefreshKey(k => k + 1)}
+              onHunkStaged={async () => {
+                setGitRefreshKey(k => k + 1);
+                // Re-fetch the index side so the diff shows remaining unstaged changes
+                if (activeDiff && !activeDiff.readOnly) {
+                  const newIndexed = await window.vaultApp.gitFileAtIndex(activeDiff.path);
+                  setActiveDiff(d => d ? { ...d, head: newIndexed } : d);
+                }
+              }}
             />
           ) : activeTab ? (
             <>
