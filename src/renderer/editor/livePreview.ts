@@ -603,7 +603,7 @@ const INLINE_PATTERNS: Array<{
   // Markdown links: [text](url)
   {
     re: /\[([^\]]+)\]\(([^)]+)\)/g,
-    handle(m, lineFrom, out, config) {
+    handle(m, lineFrom, out) {
       const text = m[1];
       const href = m[2];
       const isExt = /^https?:\/\//.test(href);
@@ -614,7 +614,7 @@ const INLINE_PATTERNS: Array<{
         value: Decoration.replace({
           widget: isExt
             ? new ExtLinkWidget(text, href)
-            : new WikiLinkWidget(text, href.replace(/\.md$/, ''), noteExists(href.replace(/\.md$/, '').split('/').pop() ?? '', config.allPaths)),
+            : new WikiLinkWidget(text, href.replace(/\.md$/, ''), true),
         }),
       });
     },
