@@ -281,12 +281,24 @@ class CheckboxWidget extends WidgetType {
 
   eq(other: CheckboxWidget) { return this.checked === other.checked; }
 
-  toDOM(): HTMLElement {
+  toDOM(view: EditorView): HTMLElement {
     const cb = document.createElement('input');
     cb.type = 'checkbox';
     cb.className = 'cm-task-checkbox';
     cb.checked = this.checked;
-    cb.addEventListener('mousedown', e => e.preventDefault()); // handled by click
+    cb.addEventListener('mousedown', e => e.preventDefault());
+    cb.addEventListener('click', e => {
+      e.preventDefault();
+      e.stopPropagation();
+      const pos  = view.posAtDOM(cb);
+      const line = view.state.doc.lineAt(pos);
+      const newText = line.text.replace(/\[([ xX])\]/, (_, c) =>
+        c.trim() === '' ? '[x]' : '[ ]'
+      );
+      if (newText !== line.text) {
+        view.dispatch({ changes: { from: line.from, to: line.to, insert: newText } });
+      }
+    });
     return cb;
   }
 
