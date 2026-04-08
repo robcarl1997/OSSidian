@@ -719,29 +719,25 @@ body {
 
 /* ─── YAML Frontmatter ──────────────────────────────────────────────────────── */
 
-.cm-frontmatter {
-  border: 1px solid var(--border);
-  border-radius: 6px;
-  padding: 6px 14px 10px;
+.cm-frontmatter-wrapper {
   margin: 4px 0 10px;
-  background: var(--bg-surface);
-  font-size: 0.88em;
-  line-height: 1.6;
 }
 
 .cm-frontmatter-title {
-  font-size: 1.9em;
+  font-size: 2em;
   font-weight: 700;
   color: var(--text-primary);
-  line-height: 1.25;
-  padding: 4px 0 6px;
-  border-bottom: 1px solid var(--border);
-  margin-bottom: 6px;
+  line-height: 1.2;
+  padding: 4px 0 10px;
 }
 
-.cm-frontmatter-table {
-  display: flex;
-  flex-direction: column;
+.cm-frontmatter {
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 6px 14px 8px;
+  background: var(--bg-surface);
+  font-size: 0.88em;
+  line-height: 1.6;
 }
 
 .cm-frontmatter-row {

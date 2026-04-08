@@ -251,6 +251,15 @@ const listContinuationKeymap = Prec.highest(keymap.of([{
     const line = view.state.doc.lineAt(sel.from);
     const text = line.text;
 
+    // Frontmatter: Enter on first line "---" → insert closing --- and place cursor inside
+    if (line.number === 1 && text === '---') {
+      view.dispatch({
+        changes: { from: sel.from, insert: '\n\n---' },
+        selection: { anchor: sel.from + 1 },
+      });
+      return true;
+    }
+
     // Task list: - [ ] text  (check before bullet so "- [ ]" isn't treated as bullet)
     const taskM = text.match(/^(\s*)([-*+])(\s+)\[([ xX])\]\s*/);
     if (taskM) {

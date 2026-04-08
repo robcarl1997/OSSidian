@@ -374,57 +374,58 @@ class FrontmatterWidget extends WidgetType {
   }
 
   toDOM(): HTMLElement {
-    const wrap = document.createElement('div');
-    wrap.className = 'cm-frontmatter';
+    // Outer wrapper holds title + card as siblings
+    const outer = document.createElement('div');
+    outer.className = 'cm-frontmatter-wrapper';
 
-    // Render title prominently above the key-value rows
+    // Title above the card (like Obsidian)
     if (this.data.title) {
       const h1 = document.createElement('div');
       h1.className = 'cm-frontmatter-title';
       h1.textContent = String(this.data.title);
-      wrap.appendChild(h1);
+      outer.appendChild(h1);
     }
 
     const entries = Object.entries(this.data).filter(([k]) => k !== 'title');
-    if (entries.length === 0) return wrap;
+    if (entries.length > 0) {
+      const card = document.createElement('div');
+      card.className = 'cm-frontmatter';
+      outer.appendChild(card);
 
-    const table = document.createElement('div');
-    table.className = 'cm-frontmatter-table';
-    wrap.appendChild(table);
+      for (const [key, value] of entries) {
+        const row = document.createElement('div');
+        row.className = 'cm-frontmatter-row';
+        card.appendChild(row);
 
-    for (const [key, value] of entries) {
-      const row = document.createElement('div');
-      row.className = 'cm-frontmatter-row';
-      table.appendChild(row);
+        const keyEl = document.createElement('span');
+        keyEl.className = 'cm-frontmatter-key';
+        keyEl.textContent = key;
+        row.appendChild(keyEl);
 
-      const keyEl = document.createElement('span');
-      keyEl.className = 'cm-frontmatter-key';
-      keyEl.textContent = key;
-      row.appendChild(keyEl);
+        const valEl = document.createElement('span');
+        valEl.className = 'cm-frontmatter-value';
 
-      const valEl = document.createElement('span');
-      valEl.className = 'cm-frontmatter-value';
+        const isTagKey = key === 'tags' || key === 'tag';
+        const arr = Array.isArray(value) ? value : (isTagKey && typeof value === 'string' ? value.split(/[\s,]+/) : null);
 
-      const isTagKey = key === 'tags' || key === 'tag';
-      const arr = Array.isArray(value) ? value : (isTagKey && typeof value === 'string' ? value.split(/[\s,]+/) : null);
+        if (arr) {
+          arr.forEach(item => {
+            const chip = document.createElement('span');
+            chip.className = isTagKey ? 'cm-frontmatter-tag' : 'cm-frontmatter-chip';
+            chip.textContent = String(item).replace(/^#/, '');
+            valEl.appendChild(chip);
+          });
+        } else if (value instanceof Date) {
+          valEl.textContent = value.toLocaleDateString('de');
+        } else if (value !== null && value !== undefined) {
+          valEl.textContent = String(value);
+        }
 
-      if (arr) {
-        arr.forEach(item => {
-          const chip = document.createElement('span');
-          chip.className = isTagKey ? 'cm-frontmatter-tag' : 'cm-frontmatter-chip';
-          chip.textContent = String(item).replace(/^#/, '');
-          valEl.appendChild(chip);
-        });
-      } else if (value instanceof Date) {
-        valEl.textContent = value.toLocaleDateString('de');
-      } else if (value !== null && value !== undefined) {
-        valEl.textContent = String(value);
+        row.appendChild(valEl);
       }
-
-      row.appendChild(valEl);
     }
 
-    return wrap;
+    return outer;
   }
 
   ignoreEvent() { return false; }
