@@ -29,7 +29,7 @@ let settings: AppSettings = { ...DEFAULT_SETTINGS };
 const noteCache = new Map<string, { raw: string; mtimeMs: number }>();
 
 const IGNORED_NAMES = new Set(['.git', '.obsidian', '.trash', 'node_modules', '.DS_Store']);
-const IMAGE_EXTS    = new Set(['.png', '.jpg', '.jpeg', '.gif', '.webp', '.svg', '.bmp', '.ico', '.avif']);
+const IMAGE_EXTS    = new Set(['.png', '.jpg', '.jpeg', '.gif', '.webp', '.svg', '.bmp', '.ico', '.avif', '.pdf']);
 const SETTINGS_FILE = path.join(app.getPath('userData'), 'settings.json');
 
 // ─── Settings ─────────────────────────────────────────────────────────────────
@@ -134,9 +134,15 @@ function startWatcher(dir: string): void {
     mainWindow.webContents.send('vault:changed', event);
   };
 
-  watcher.on('add', p => { if (p.endsWith('.md')) emit('added', p); });
+  const isTracked = (p: string) =>
+    p.endsWith('.md') || IMAGE_EXTS.has(path.extname(p).toLowerCase());
+
+  watcher.on('add',    p => { if (isTracked(p)) emit('added', p); });
   watcher.on('change', p => { if (p.endsWith('.md')) emit('changed', p); });
-  watcher.on('unlink', p => { if (p.endsWith('.md')) { noteCache.delete(p); emit('removed', p); } });
+  watcher.on('unlink', p => {
+    if (p.endsWith('.md')) { noteCache.delete(p); }
+    if (isTracked(p)) emit('removed', p);
+  });
   watcher.on('addDir', p => emit('added', p));
   watcher.on('unlinkDir', p => emit('removed', p));
 }
@@ -402,6 +408,65 @@ function setupIPC(): void {
     }
   });
 
+  // ── git:stage-hunk ───────────────────────────────────────────────────────
+  // Accepts a vault-relative path and the A-side (HEAD) first line of the chunk.
+  // Uses -U0 so every discrete change is its own hunk (no context merging nearby
+  // changes together). Matches the hunk by exact A-side start line and applies
+  // it with -C0 so no context lines need to match.
+  ipcMain.handle('git:stage-hunk', async (_e, relPath: string, fromLine: number, _toLine: number) => {
+    if (!vaultPath) throw new Error('Kein Vault geöffnet');
+    const git = simpleGit(vaultPath);
+
+    // -U0 = zero context lines → each discrete change is a separate @@ hunk
+    const diffOutput = await git.diff(['-U0', 'HEAD', '--', relPath]);
+    if (!diffOutput) return; // no changes
+
+    const lines = diffOutput.split('\n');
+
+    // Collect file header (everything before the first @@)
+    let headerEnd = 0;
+    for (let i = 0; i < lines.length; i++) {
+      if (lines[i].startsWith('@@')) { headerEnd = i; break; }
+    }
+    const fileHeader = lines.slice(0, headerEnd).join('\n');
+
+    // Find all hunk starts
+    const hunkStarts: number[] = [];
+    lines.forEach((l, i) => { if (l.startsWith('@@')) hunkStarts.push(i); });
+
+    // Find the hunk whose A-side start line covers fromLine
+    for (let idx = 0; idx < hunkStarts.length; idx++) {
+      const start = hunkStarts[idx];
+      const end   = hunkStarts[idx + 1] ?? lines.length;
+
+      const m = /^@@ -(\d+)(?:,(\d+))? /.exec(lines[start]);
+      if (!m) continue;
+
+      const hunkAStart = parseInt(m[1]);
+      const hunkACount = m[2] !== undefined ? parseInt(m[2]) : 1;
+      // For pure insertions hunkACount=0; the insertion is "after" hunkAStart.
+      // fromLine is the line AT which CM shows the insertion → hunkAStart or hunkAStart+1.
+      const hunkAEnd = hunkAStart + Math.max(hunkACount - 1, 0);
+
+      if (fromLine >= hunkAStart && fromLine <= hunkAEnd + 1) {
+        const hunkContent = lines.slice(start, end).join('\n');
+        const patch = `${fileHeader}\n${hunkContent}\n`;
+
+        const tmpFile = path.join(os.tmpdir(), 'obsidian-hunk.patch');
+        fs.writeFileSync(tmpFile, patch, 'utf-8');
+        try {
+          // -C0: require 0 context lines to match (safe because -U0 has no context)
+          await git.raw(['apply', '--cached', '-C0', '--unidiff-zero', '--whitespace=nowarn', tmpFile]);
+        } finally {
+          try { fs.unlinkSync(tmpFile); } catch { /* ignore */ }
+        }
+        return;
+      }
+    }
+
+    throw new Error(`Kein Hunk gefunden für ${relPath} Zeile ${fromLine}–${toLine}`);
+  });
+
   // ── git:file-at-head ─────────────────────────────────────────────────────
   ipcMain.handle('git:file-at-head', async (_e, filePath: string): Promise<string | null> => {
     if (!vaultPath) return null;
@@ -412,6 +477,21 @@ function setupIPC(): void {
       return await git.show([`HEAD:${relative}`]);
     } catch {
       return null; // new file not yet in HEAD
+    }
+  });
+
+  // ── git:file-at-index ────────────────────────────────────────────────────
+  // Returns the content of a file from the staging area (index).
+  // `:relPath` (colon prefix) is git's syntax for "from the index".
+  ipcMain.handle('git:file-at-index', async (_e, filePath: string): Promise<string | null> => {
+    if (!vaultPath) return null;
+    try {
+      const git = simpleGit(vaultPath);
+      if (!await git.checkIsRepo()) return null;
+      const relative = path.relative(vaultPath, filePath).replace(/\\/g, '/');
+      return await git.show([`:${relative}`]);
+    } catch {
+      return null;
     }
   });
 
@@ -555,6 +635,7 @@ app.whenReady().then(() => {
     png: 'image/png', jpg: 'image/jpeg', jpeg: 'image/jpeg',
     gif: 'image/gif', webp: 'image/webp', svg: 'image/svg+xml',
     bmp: 'image/bmp', ico: 'image/x-icon', avif: 'image/avif',
+    pdf: 'application/pdf',
   };
   const vaultProtocolHandler = (request: Request): Response => {
     try {

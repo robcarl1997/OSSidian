@@ -36,6 +36,7 @@ import GitPanel from './components/GitPanel';
 import TerminalPanel from './components/TerminalPanel';
 import DiffViewer from './components/DiffViewer';
 import ImageViewer from './components/ImageViewer';
+import PdfViewer from './components/PdfViewer';
 
 const IMAGE_EXTS = new Set(['png','jpg','jpeg','gif','webp','svg','bmp','ico','avif']);
 
@@ -69,11 +70,12 @@ export default function App() {
   const [sidebarTab, setSidebarTab]     = useState<'files' | 'git'>('files');
   const [outlineOpen, setOutlineOpen]   = useState(false);
   const [headContent, setHeadContent] = useState<string | null | undefined>(undefined);
-  const [activeDiff, setActiveDiff]   = useState<{ path: string; head: string | null; current: string } | null>(null);
+  const [activeDiff, setActiveDiff]   = useState<{ path: string; head: string | null; current: string; readOnly?: boolean } | null>(null);
   const [activeImage, setActiveImage] = useState<string | null>(null);
+  const [activePdf, setActivePdf]     = useState<string | null>(null);
   const [terminalOpen, setTerminalOpen]         = useState(false);
   const [terminalMounted, setTerminalMounted]   = useState(false);
-  const [terminalPosition, setTerminalPosition] = useState<'bottom' | 'right'>('bottom');
+  const [terminalPosition, setTerminalPosition] = useState<'bottom' | 'right'>('right');
   const [terminalSize, setTerminalSize]         = useState(260);
   const [editorSelection, setEditorSelection]   = useState<string>('');
   const activeCursorRef  = useRef<number>(0);
@@ -102,6 +104,10 @@ export default function App() {
   useEffect(() => {
     window.vaultApp.getInitialState().then(snap => {
       setSnapshot(snap);
+      // Apply persisted terminal position on startup
+      if (snap.settings.terminalPosition) {
+        setTerminalPosition(snap.settings.terminalPosition);
+      }
     });
   }, []);
 
@@ -109,6 +115,21 @@ export default function App() {
   useEffect(() => {
     return window.vaultApp.onVaultChanged(event => {
       setSnapshot(event.snapshot);
+
+      // Reload open tab when file changes externally (unless user has unsaved edits)
+      if (event.kind === 'changed' && event.path) {
+        const changedPath = event.path;
+        setTabs(prev => {
+          const tab = prev.find(t => t.path === changedPath);
+          if (!tab || tab.dirty) return prev;
+          window.vaultApp.openNote(changedPath).then(doc => {
+            setTabs(curr =>
+              curr.map(t => t.path === changedPath ? { ...doc, dirty: false } : t)
+            );
+          });
+          return prev;
+        });
+      }
     });
   }, []);
 
@@ -142,11 +163,18 @@ export default function App() {
       return;
     }
 
-    // Image files → ImageViewer instead of editor
+    // Image files → ImageViewer; PDFs → PdfViewer
     const ext = rawTarget.split('.').pop()?.toLowerCase() ?? '';
     if (IMAGE_EXTS.has(ext)) {
       setActiveImage(rawTarget);
       setActiveDiff(null);
+      setActivePdf(null);
+      return;
+    }
+    if (ext === 'pdf') {
+      setActivePdf(rawTarget);
+      setActiveDiff(null);
+      setActiveImage(null);
       return;
     }
 
@@ -328,6 +356,7 @@ export default function App() {
   const handleSettingsSave = useCallback(async (partial: Partial<AppSettings>) => {
     const updated = await window.vaultApp.updateSettings(partial);
     setSnapshot(prev => prev ? { ...prev, settings: updated } : prev);
+    if (partial.terminalPosition) setTerminalPosition(partial.terminalPosition);
   }, []);
 
   // ─── Reload open tabs after git restore ──────────────────────────────────
@@ -350,7 +379,7 @@ export default function App() {
     }
   }, []);
 
-  // ─── Open diff view ──────────────────────────────────────────────────────
+  // ─── Open diff view (working tree vs HEAD) ──────────────────────────────
   const openDiff = useCallback(async (vaultRelPath: string) => {
     if (!snapshot?.vaultPath) return;
     const fullPath = `${snapshot.vaultPath}/${vaultRelPath}`;
@@ -361,6 +390,17 @@ export default function App() {
     const current = tabs.find(t => t.path === fullPath)?.raw ?? note?.raw ?? '';
     setActiveDiff({ path: fullPath, head, current });
   }, [snapshot?.vaultPath, tabs]);
+
+  // ─── Open staged diff view (index vs HEAD) ───────────────────────────────
+  const openStagedDiff = useCallback(async (vaultRelPath: string) => {
+    if (!snapshot?.vaultPath) return;
+    const fullPath = `${snapshot.vaultPath}/${vaultRelPath}`;
+    const [head, indexed] = await Promise.all([
+      window.vaultApp.gitFileAtHead(fullPath),
+      window.vaultApp.gitFileAtIndex(fullPath),
+    ]);
+    setActiveDiff({ path: fullPath, head, current: indexed ?? '', readOnly: true });
+  }, [snapshot?.vaultPath]);
 
   // ─── Fetch HEAD content for git gutter ───────────────────────────────────
   useEffect(() => {
@@ -567,6 +607,7 @@ export default function App() {
             vaultPath={snapshot?.vaultPath ?? null}
             onFileOpen={openNote}
             onOpenDiff={openDiff}
+            onOpenStagedDiff={openStagedDiff}
             onCommit={() => {
               if (activePath) window.vaultApp.gitFileAtHead(activePath).then(setHeadContent);
             }}
@@ -587,7 +628,7 @@ export default function App() {
         <TabBar
           tabs={tabs}
           activePath={activePath}
-          onActivate={p => { setActivePath(p); setActiveDiff(null); setActiveImage(null); }}
+          onActivate={p => { setActivePath(p); setActiveDiff(null); setActiveImage(null); setActivePdf(null); }}
           onClose={closeTab}
         />
 
@@ -599,17 +640,24 @@ export default function App() {
               vaultPath={snapshot.vaultPath}
               onClose={() => setActiveImage(null)}
             />
+          ) : activePdf && snapshot?.vaultPath ? (
+            <PdfViewer
+              path={activePdf}
+              vaultPath={snapshot.vaultPath}
+              onClose={() => setActivePdf(null)}
+            />
           ) : activeDiff ? (
             <DiffViewer
               path={activeDiff.path}
+              vaultPath={snapshot?.vaultPath ?? ''}
               headContent={activeDiff.head}
               currentContent={activeDiff.current}
+              readOnly={activeDiff.readOnly}
               theme={settings.theme}
               fontFamily={settings.editorFontFamily}
               fontSize={settings.editorFontSize}
               lineHeight={settings.editorLineHeight}
               onSave={newContent => {
-                // Keep open tab in sync if the file is currently open
                 setTabs(prev => prev.map(t =>
                   t.path === activeDiff.path ? { ...t, raw: newContent, dirty: false } : t
                 ));
@@ -718,7 +766,11 @@ export default function App() {
             visible={terminalOpen}
             size={terminalSize}
             onSizeChange={setTerminalSize}
-            onPositionToggle={() => setTerminalPosition(p => p === 'bottom' ? 'right' : 'bottom')}
+            onPositionToggle={() => setTerminalPosition(p => {
+              const next = p === 'bottom' ? 'right' : 'bottom';
+              handleSettingsSave({ terminalPosition: next });
+              return next;
+            })}
             onContextUpdate={() => window.vaultApp.writeContext(activePathRef.current, editorSelectionRef.current)}
             onClose={() => { setTerminalOpen(false); setTimeout(() => editorRef.current?.focus(), 0); }}
           />

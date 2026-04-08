@@ -995,6 +995,19 @@ body {
 }
 .settings-text-input:focus { border-color: var(--accent); }
 
+.settings-select {
+  background: var(--bg-input);
+  border: 1px solid var(--border);
+  border-radius: 5px;
+  padding: 5px 10px;
+  font-size: 13px;
+  color: var(--text-primary);
+  outline: none;
+  cursor: pointer;
+  width: 220px;
+}
+.settings-select:focus { border-color: var(--accent); }
+
 /* Vim keybinding table */
 .keybinding-table {
   width: 100%;
@@ -2033,6 +2046,54 @@ body {
 }
 .diff-close-btn:hover { color: var(--text-primary); background: var(--bg-hover); }
 
+/* Inline revert/stage buttons in the cm-merge-revert strip */
+.cm-revert-wrapper {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 2px;
+  /* CM sets style.top on this element; position:absolute is needed for top to work.
+     CM's built-in CSS only sets position:absolute on button children, not divs,
+     so we must set it here ourselves. */
+  position: absolute;
+  left: 0;
+  right: 0;
+}
+
+.cm-revert-btn,
+.cm-stage-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 20px;
+  height: 20px;
+  border-radius: 3px;
+  border: 1px solid var(--border);
+  cursor: pointer;
+  font-size: 13px;
+  line-height: 1;
+  padding: 0;
+}
+
+.cm-revert-btn {
+  background: color-mix(in srgb, var(--text-muted) 15%, transparent);
+  color: var(--text-muted);
+}
+.cm-revert-btn:hover {
+  background: color-mix(in srgb, var(--text-muted) 30%, transparent);
+  color: var(--text-primary);
+}
+
+.cm-stage-btn {
+  background: color-mix(in srgb, var(--success) 15%, transparent);
+  color: var(--success);
+  border-color: color-mix(in srgb, var(--success) 40%, transparent);
+  font-weight: bold;
+}
+.cm-stage-btn:hover {
+  background: color-mix(in srgb, var(--success) 30%, transparent);
+}
+
 .diff-notice {
   font-size: 12px;
   color: var(--text-muted);
@@ -2060,8 +2121,78 @@ body {
   border-right: 1px solid var(--border);
 }
 
+/* Revert strip — needs room for two stacked 20px buttons + gap */
+.diff-container .cm-merge-revert {
+  width: 28px;
+  position: relative;
+  overflow: visible;
+}
+
+/* Deleted chunk widget — make removed lines readable at full font size */
+.diff-container .cm-deletedChunk {
+  min-height: 1.4em;
+  padding: 2px 0;
+}
+.diff-container .cm-deletedChunk .cm-deletedLine {
+  display: block;
+  min-height: 1.4em;
+  padding: 0 16px;
+}
+.diff-container .cm-deletedChunk del {
+  text-decoration: none;
+}
+
 /* Git panel diff button */
 .git-action-diff {
   color: var(--link) !important;
   font-size: 12px;
+}
+
+/* ─── PDF Viewer ─────────────────────────────────────────────────────────── */
+
+.pdf-viewer {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  background: var(--bg-app);
+}
+
+.pdf-viewer-header {
+  display: flex;
+  align-items: center;
+  padding: 6px 12px;
+  border-bottom: 1px solid var(--border);
+  background: var(--bg-surface);
+  flex-shrink: 0;
+  gap: 8px;
+}
+
+.pdf-viewer-name {
+  flex: 1;
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--text-primary);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.pdf-viewer-close {
+  background: none;
+  border: none;
+  color: var(--text-muted);
+  font-size: 14px;
+  cursor: pointer;
+  padding: 2px 6px;
+  border-radius: 3px;
+  flex-shrink: 0;
+}
+.pdf-viewer-close:hover { color: var(--text-primary); background: var(--bg-hover); }
+
+.pdf-viewer-frame {
+  flex: 1;
+  border: none;
+  width: 100%;
+  height: 100%;
+  background: #fff;
 }

@@ -41,6 +41,7 @@ export interface AppSettings {
   vimLeader: string;
   appKeybindings: AppKeybinding[];
   attachmentFolder: string;    // vault-relative folder for pasted images
+  terminalPosition: 'bottom' | 'right';
 }
 
 export const DEFAULT_SETTINGS: AppSettings = {
@@ -56,6 +57,7 @@ export const DEFAULT_SETTINGS: AppSettings = {
   vimKeybindings: [],
   vimLeader: '\\',
   attachmentFolder: 'attachments',
+  terminalPosition: 'right',
   appKeybindings: [
     { key: 'Ctrl+P',         action: 'quickOpen'     },
     { key: 'Ctrl+B',         action: 'toggleSidebar' },
@@ -170,7 +172,9 @@ export interface VaultApi {
   gitCommit(message: string): Promise<GitCommit>;
   gitLog(limit?: number): Promise<GitCommit[]>;
   gitFileAtHead(filePath: string): Promise<string | null>;
+  gitFileAtIndex(filePath: string): Promise<string | null>;
   gitRestore(paths: string[]): Promise<void>;
+  stageHunk(relPath: string, fromLine: number, toLine: number): Promise<void>;
   writeContext(filePath: string | null, selection: string): Promise<string>;
 }
 
