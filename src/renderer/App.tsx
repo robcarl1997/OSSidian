@@ -301,6 +301,10 @@ export default function App() {
           setSidebarTab('files');
           setFocusFileTreeReq(v => (v ?? 0) + 1);
           break;
+        case 'focusGit':
+          setSidebarOpen(true);
+          setSidebarTab('git');
+          break;
         case 'toggleTerminal':
           setTerminalOpen(v => {
             if (!v) {

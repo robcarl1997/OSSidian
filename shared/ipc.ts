@@ -21,7 +21,8 @@ export type AppAction =
   | 'newNote'
   | 'openSettings'
   | 'toggleTerminal'
-  | 'focusFileTree';
+  | 'focusFileTree'
+  | 'focusGit';
 
 export interface AppKeybinding {
   key: string;      // normalised combo, e.g. "Ctrl+P", "Ctrl+Shift+O"
@@ -70,6 +71,7 @@ export const DEFAULT_SETTINGS: AppSettings = {
     { key: 'Ctrl+W',         action: 'tabClose'       },
     { key: 'Ctrl+`',         action: 'toggleTerminal' },
     { key: 'Ctrl+Shift+E',  action: 'focusFileTree'  },
+    { key: 'Ctrl+Shift+G',  action: 'focusGit'       },
   ],
 };
 
