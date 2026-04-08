@@ -15,6 +15,7 @@ import {
   WidgetType,
 } from '@codemirror/view';
 import { EditorState, Facet, RangeSetBuilder, StateField } from '@codemirror/state';
+import * as yaml from 'js-yaml';
 
 // ─── Configuration facet ──────────────────────────────────────────────────────
 
@@ -61,6 +62,40 @@ function buildBlockDecorations(state: EditorState): DecorationSet {
   let pos = 0;
   while (pos <= state.doc.length) {
     const line = state.doc.lineAt(pos);
+
+    // ── YAML Frontmatter (only at document start)
+    if (line.number === 1 && line.text === '---') {
+      let endLineNo = -1;
+      let sp = line.to + 1;
+      while (sp <= state.doc.length) {
+        const inner = state.doc.lineAt(sp);
+        if (inner.text === '---' || inner.text === '...') { endLineNo = inner.number; break; }
+        sp = inner.to + 1;
+      }
+      if (endLineNo !== -1) {
+        const hasCursor = cursorLineNo >= 1 && cursorLineNo <= endLineNo;
+        if (!hasCursor) {
+          const yamlLines: string[] = [];
+          for (let n = 2; n < endLineNo; n++) yamlLines.push(state.doc.line(n).text);
+          try {
+            const parsed = yaml.load(yamlLines.join('\n'));
+            if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) {
+              const endLine = state.doc.line(endLineNo);
+              items.push({
+                from:  line.from,
+                to:    endLine.to,
+                value: Decoration.replace({
+                  widget: new FrontmatterWidget(parsed as Record<string, unknown>),
+                  block: true,
+                }),
+              });
+            }
+          } catch { /* invalid YAML — show raw */ }
+        }
+        pos = state.doc.line(endLineNo).to + 1;
+        continue;
+      }
+    }
 
     // ── Fenced code block: ``` or ~~~
     // Uses per-line Decoration.line (no block:true) so cursor can navigate into
@@ -327,6 +362,57 @@ class ImageWidget extends WidgetType {
   }
 
   ignoreEvent() { return true; }
+}
+
+// ─── Frontmatter widget ───────────────────────────────────────────────────────
+
+class FrontmatterWidget extends WidgetType {
+  constructor(readonly data: Record<string, unknown>) { super(); }
+
+  eq(other: FrontmatterWidget): boolean {
+    return JSON.stringify(this.data) === JSON.stringify(other.data);
+  }
+
+  toDOM(): HTMLElement {
+    const wrap = document.createElement('div');
+    wrap.className = 'cm-frontmatter';
+
+    for (const [key, value] of Object.entries(this.data)) {
+      const row = document.createElement('div');
+      row.className = 'cm-frontmatter-row';
+
+      const keyEl = document.createElement('span');
+      keyEl.className = 'cm-frontmatter-key';
+      keyEl.textContent = key;
+      row.appendChild(keyEl);
+
+      const valEl = document.createElement('span');
+      valEl.className = 'cm-frontmatter-value';
+
+      const isTagKey = key === 'tags' || key === 'tag';
+      const arr = Array.isArray(value) ? value : (isTagKey && typeof value === 'string' ? value.split(/[\s,]+/) : null);
+
+      if (arr) {
+        arr.forEach(item => {
+          const chip = document.createElement('span');
+          chip.className = isTagKey ? 'cm-frontmatter-tag' : 'cm-frontmatter-chip';
+          chip.textContent = String(item).replace(/^#/, '');
+          valEl.appendChild(chip);
+        });
+      } else if (value instanceof Date) {
+        valEl.textContent = value.toLocaleDateString('de');
+      } else if (value !== null && value !== undefined) {
+        valEl.textContent = String(value);
+      }
+
+      row.appendChild(valEl);
+      wrap.appendChild(row);
+    }
+
+    return wrap;
+  }
+
+  ignoreEvent() { return false; }
 }
 
 const IMAGE_EXTS = new Set(['png', 'jpg', 'jpeg', 'gif', 'svg', 'webp', 'bmp', 'ico', 'avif']);
