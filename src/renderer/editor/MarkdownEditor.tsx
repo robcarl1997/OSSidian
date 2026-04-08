@@ -243,6 +243,36 @@ function registerAppVimCommands(): void {
     window.dispatchEvent(new CustomEvent('obsidian:toggle-outline'));
   });
 
+  // ── Split pane (VS Code style) ──
+  Vim.defineEx('vsplit', 'vsp', (_cm: unknown, params: { args?: string[] }) => {
+    window.dispatchEvent(new CustomEvent('obsidian:vsplit', {
+      detail: { filePath: params.args?.[0] ?? null },
+    }));
+  });
+  Vim.defineEx('split', 'sp', (_cm: unknown, params: { args?: string[] }) => {
+    // Treat horizontal split same as vertical for now
+    window.dispatchEvent(new CustomEvent('obsidian:vsplit', {
+      detail: { filePath: params.args?.[0] ?? null },
+    }));
+  });
+  Vim.defineEx('wincmd', 'winc', (_cm: unknown, params: { args?: string[] }) => {
+    window.dispatchEvent(new CustomEvent('obsidian:wincmd', {
+      detail: { cmd: params.args?.[0] ?? '' },
+    }));
+  });
+
+  // Ctrl+W window navigation
+  Vim.map('<C-w>v',     ':vsplit<CR>',       'normal');
+  Vim.map('<C-w><C-v>', ':vsplit<CR>',       'normal');
+  Vim.map('<C-w>s',     ':split<CR>',        'normal');
+  Vim.map('<C-w><C-s>', ':split<CR>',        'normal');
+  Vim.map('<C-w>w',     ':wincmd w<CR>',     'normal');
+  Vim.map('<C-w><C-w>', ':wincmd w<CR>',     'normal');
+  Vim.map('<C-w>h',     ':wincmd h<CR>',     'normal');
+  Vim.map('<C-w>l',     ':wincmd l<CR>',     'normal');
+  Vim.map('<C-w>c',     ':wincmd c<CR>',     'normal');
+  Vim.map('<C-w>q',     ':wincmd q<CR>',     'normal');
+
   // Default normal-mode mappings (can be overridden via vimKeybindings settings)
   Vim.map('gt', ':tabnext<CR>', 'normal');
   Vim.map('gT', ':tabprev<CR>', 'normal');

@@ -86,15 +86,22 @@ export default function App() {
   const [activePaneIdx, setActivePaneIdx]       = useState<0 | 1>(0);
   const [terminalSize, setTerminalSize]         = useState(260);
   const [editorSelection, setEditorSelection]   = useState<string>('');
-  const activeCursorRef  = useRef<number>(0);
-  const pendingCursors   = useRef(new Map<string, number>());
-  const editorRef        = useRef<MarkdownEditorHandle>(null);
+  const activeCursorRef    = useRef<number>(0);
+  const pendingCursors     = useRef(new Map<string, number>());
+  const editorRef          = useRef<MarkdownEditorHandle>(null);
+  const splitEditorRef     = useRef<MarkdownEditorHandle>(null);
+  const activePaneIdxRef   = useRef<0 | 1>(0);
+  const splitEnabledRef    = useRef(false);
+  const splitPathRef       = useRef<string | null>(null);
   const snapshotRef        = useRef(snapshot);
   const activePathRef      = useRef(activePath);
   const editorSelectionRef = useRef(editorSelection);
   useEffect(() => { snapshotRef.current = snapshot; }, [snapshot]);
   useEffect(() => { activePathRef.current = activePath; }, [activePath]);
   useEffect(() => { editorSelectionRef.current = editorSelection; }, [editorSelection]);
+  useEffect(() => { activePaneIdxRef.current = activePaneIdx; }, [activePaneIdx]);
+  useEffect(() => { splitEnabledRef.current = splitEnabled; }, [splitEnabled]);
+  useEffect(() => { splitPathRef.current = splitPath; }, [splitPath]);
 
   const deferredSearch = useDeferredValue(searchQuery);
   const autosaveTimer  = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -298,11 +305,68 @@ export default function App() {
 
   // ─── Tab navigation helpers ───────────────────────────────────────────────
   const switchTab = useCallback((delta: number) => {
+    if (activePaneIdxRef.current === 1) {
+      setSplitTabs(prev => {
+        if (prev.length === 0) return prev;
+        const idx = prev.findIndex(t => t.path === splitPathRef.current);
+        const next = prev[(idx + delta + prev.length) % prev.length];
+        if (next) setSplitPath(next.path);
+        return prev;
+      });
+      return;
+    }
     if (tabs.length === 0) return;
     const idx = tabs.findIndex(t => t.path === activePath);
     const next = tabs[(idx + delta + tabs.length) % tabs.length];
     if (next) setActivePath(next.path);
   }, [tabs, activePath]);
+
+  // ─── Open vertical split (VS Code style) ─────────────────────────────────
+  const openSplit = useCallback(async (filePath?: string | null) => {
+    const targetPath = filePath ?? activePathRef.current;
+    if (!targetPath) return;
+    if (!splitEnabledRef.current) {
+      // Enable split first, then open the file in the right pane
+      const doc = await window.vaultApp.openNote(targetPath);
+      setSplitTabs([doc]);
+      setSplitPath(targetPath);
+      setSplitEnabled(true);
+      setActivePaneIdx(1);
+      setTimeout(() => splitEditorRef.current?.focus(), 50);
+    } else {
+      // Split already open — open/switch to the file in the right pane
+      if (filePath) {
+        const existing = splitTabs.find(t => t.path === filePath);
+        if (existing) {
+          setSplitPath(filePath);
+        } else {
+          const doc = await window.vaultApp.openNote(filePath);
+          setSplitTabs(prev => [...prev, doc]);
+          setSplitPath(filePath);
+        }
+      }
+      setActivePaneIdx(1);
+      setTimeout(() => splitEditorRef.current?.focus(), 50);
+    }
+  }, [splitTabs]);
+
+  // ─── Close right pane ─────────────────────────────────────────────────────
+  const closeSplitPane = useCallback(() => {
+    setSplitEnabled(false);
+    setSplitTabs([]);
+    setSplitPath(null);
+    setActivePaneIdx(0);
+    setTimeout(() => editorRef.current?.focus(), 50);
+  }, []);
+
+  // ─── Focus pane by index ──────────────────────────────────────────────────
+  const focusPane = useCallback((idx: 0 | 1) => {
+    setActivePaneIdx(idx);
+    setTimeout(() => {
+      if (idx === 0) editorRef.current?.focus();
+      else splitEditorRef.current?.focus();
+    }, 30);
+  }, []);
 
   // ─── Global keyboard shortcuts + Vim app-event listeners ─────────────────
   useEffect(() => {
@@ -362,7 +426,12 @@ export default function App() {
           }
           break;
         case 'splitPane':
-          setSplitEnabled(v => !v);
+          if (!splitEnabledRef.current) {
+            openSplit();
+          } else {
+            // Cycle between panes (like Ctrl+W w)
+            focusPane(activePaneIdxRef.current === 0 ? 1 : 0);
+          }
           break;
         case 'toggleTerminal':
           setTerminalOpen(v => {
@@ -379,6 +448,23 @@ export default function App() {
       }
     };
 
+    const onVsplit = (e: CustomEvent<{ filePath: string | null }>) => {
+      openSplit(e.detail?.filePath);
+    };
+    const onWincmd = (e: CustomEvent<{ cmd: string }>) => {
+      const cmd = e.detail?.cmd ?? '';
+      switch (cmd) {
+        case 'v': openSplit(); break;
+        case 'w': case '\x17': focusPane(activePaneIdxRef.current === 0 ? 1 : 0); break;
+        case 'h': focusPane(0); break;
+        case 'l': focusPane(1); break;
+        case 'c': case 'q':
+          if (activePaneIdxRef.current === 1) closeSplitPane();
+          else if (activePathRef.current) closeTab(activePathRef.current);
+          break;
+      }
+    };
+
     window.addEventListener('obsidian:tab-next',       onTabNext       as EventListener);
     window.addEventListener('obsidian:tab-prev',       onTabPrev       as EventListener);
     window.addEventListener('obsidian:tab-close',      onTabClose      as EventListener);
@@ -386,6 +472,8 @@ export default function App() {
     window.addEventListener('obsidian:quick-open',     onQuickOpen     as EventListener);
     window.addEventListener('obsidian:toggle-sidebar', onToggleSidebar as EventListener);
     window.addEventListener('obsidian:toggle-outline', onToggleOutline as EventListener);
+    window.addEventListener('obsidian:vsplit',         onVsplit        as EventListener);
+    window.addEventListener('obsidian:wincmd',         onWincmd        as EventListener);
     window.addEventListener('keydown', onKeyDown, true);
 
     return () => {
@@ -396,9 +484,11 @@ export default function App() {
       window.removeEventListener('obsidian:quick-open',     onQuickOpen     as EventListener);
       window.removeEventListener('obsidian:toggle-sidebar', onToggleSidebar as EventListener);
       window.removeEventListener('obsidian:toggle-outline', onToggleOutline as EventListener);
+      window.removeEventListener('obsidian:vsplit',         onVsplit        as EventListener);
+      window.removeEventListener('obsidian:wincmd',         onWincmd        as EventListener);
       window.removeEventListener('keydown', onKeyDown, true);
     };
-  }, [switchTab, activePath, closeTab, jumpBack, settings.appKeybindings, snapshot, sidebarOpen, sidebarTab]);
+  }, [switchTab, activePath, closeTab, jumpBack, settings.appKeybindings, snapshot, sidebarOpen, sidebarTab, openSplit, closeSplitPane, focusPane]);
 
   // ─── Mark tab dirty ───────────────────────────────────────────────────────
   const markDirty = useCallback((path: string, raw: string) => {
@@ -832,19 +922,8 @@ export default function App() {
                 <div className="editor-toolbar-sep" />
                 <button
                   className={`editor-mode-btn${splitEnabled ? ' active' : ''}`}
-                  onClick={() => {
-                    setSplitEnabled(v => {
-                      if (!v && activePath) {
-                        // Open current note in right pane on split enable
-                        window.vaultApp.openNote(activePath).then(doc => {
-                          setSplitTabs([doc]);
-                          setSplitPath(activePath);
-                        });
-                      }
-                      return !v;
-                    });
-                  }}
-                  title="Split-Ansicht (Ctrl+\)"
+                  onClick={() => splitEnabled ? closeSplitPane() : openSplit()}
+                  title="Split-Ansicht (Ctrl+\ | :vsplit | Ctrl+W v)"
                 >
                   Split
                 </button>
@@ -926,7 +1005,15 @@ export default function App() {
               onClose={p => {
                 setSplitTabs(prev => {
                   const next = prev.filter(t => t.path !== p);
-                  if (splitPath === p) setSplitPath(next[next.length - 1]?.path ?? null);
+                  if (next.length === 0) {
+                    // Last tab closed → close the split pane
+                    setSplitEnabled(false);
+                    setSplitPath(null);
+                    setActivePaneIdx(0);
+                    setTimeout(() => editorRef.current?.focus(), 50);
+                  } else {
+                    if (splitPath === p) setSplitPath(next[next.length - 1]?.path ?? null);
+                  }
                   return next;
                 });
               }}
@@ -935,6 +1022,7 @@ export default function App() {
               const splitTab = splitTabs.find(t => t.path === splitPath) ?? null;
               return splitTab ? (
                 <MarkdownEditor
+                  ref={splitEditorRef}
                   key={splitTab.path + '-split'}
                   doc={splitTab}
                   editorMode={settings.editorMode}

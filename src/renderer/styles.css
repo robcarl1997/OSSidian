@@ -2454,16 +2454,24 @@ body {
 .panes-container--split .editor-area {
   flex: 1;
   min-width: 0;
-  border-right: 1px solid var(--border);
+  border-right: 2px solid var(--border);
+  position: relative;
 }
 
 .panes-container--split .editor-area:last-child {
   border-right: none;
 }
 
-.panes-container--split .editor-area.pane-active {
-  outline: 1px solid var(--accent);
-  outline-offset: -1px;
+/* VS Code-style: thin colored top border on the active pane */
+.panes-container--split .editor-area.pane-active::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  height: 2px;
+  background: var(--accent);
+  z-index: 10;
 }
 
 .split-pane-right {
