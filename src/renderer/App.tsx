@@ -137,6 +137,17 @@ export default function App() {
           });
           return prev;
         });
+        // Also sync split pane if it has the same file open and isn't dirty
+        setSplitTabs(prev => {
+          const tab = prev.find(t => t.path === changedPath);
+          if (!tab || tab.dirty) return prev;
+          window.vaultApp.openNote(changedPath).then(doc => {
+            setSplitTabs(curr =>
+              curr.map(t => t.path === changedPath ? { ...doc, dirty: false } : t)
+            );
+          });
+          return prev;
+        });
       }
     });
   }, []);
