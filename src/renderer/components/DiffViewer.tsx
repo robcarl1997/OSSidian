@@ -28,26 +28,21 @@ function makeEditorTheme(theme: Theme, fontFamily: string, fontSize: number, lin
     '.cm-gutters': { background: gutter, color: gutterFg, border: 'none', paddingRight: '4px' },
     '.cm-activeLineGutter': { background: 'transparent' },
     '.cm-cursor': { borderLeftColor: cursor },
+    // Per-side line colours (A = old/deleted, B = new/inserted)
+    '&.cm-merge-a .cm-changedLine': {
+      background: isDark ? '#3d1822' : theme === 'sepia' ? '#f0cfc0' : '#fce8e8',
+      borderLeft: isDark ? '4px solid #f38ba8' : theme === 'sepia' ? '4px solid #c05030' : '4px solid #e53e3e',
+    },
+    '&.cm-merge-b .cm-changedLine': {
+      background: isDark ? '#1a3828' : theme === 'sepia' ? '#d0e0c0' : '#e6f4ea',
+      borderLeft: isDark ? '4px solid #a6e3a1' : theme === 'sepia' ? '4px solid #3a7040' : '4px solid #38a169',
+    },
     '.cm-changedLine':  { background: isDark ? '#2a2d45' : theme === 'sepia' ? '#e8d9c5' : '#e8f0fe' },
-    '.cm-deletedLine':  { background: isDark ? '#3d1f2a' : theme === 'sepia' ? '#f0cfc0' : '#fce8e8' },
+    '.cm-deletedLine':  { background: 'transparent' },
     '.cm-changedText':  { background: isDark ? '#4a4070' : theme === 'sepia' ? '#d0b090' : '#c5d8ff' },
     '.cm-deletedText':  { background: isDark ? '#7a2540' : theme === 'sepia' ? '#c09080' : '#f5b8b8' },
     '.cm-insertedLine': { background: isDark ? '#1e3a2a' : theme === 'sepia' ? '#d0e0c0' : '#e6f4ea' },
     '.cm-insertedText': { background: isDark ? '#2a6040' : theme === 'sepia' ? '#a0c080' : '#a8d5b5' },
-    // Deleted chunk widget — make removed lines legible
-    '.cm-deletedChunk': {
-      background: isDark ? '#3d1f2a' : theme === 'sepia' ? '#f0cfc0' : '#fce8e8',
-      padding: '4px 0',
-    },
-    '.cm-deletedChunk .cm-deletedLine': {
-      display: 'block',
-      minHeight: `${lineHeight * 1.4}em`,
-      padding: '1px 16px',
-      fontSize: `${fontSize}px`,
-      lineHeight: String(lineHeight),
-      color: isDark ? '#f38ba8' : theme === 'sepia' ? '#c05030' : '#c0392b',
-    },
-    '.cm-deletedChunk del': { textDecoration: 'none' },
   }, { dark: isDark });
 }
 

@@ -1814,34 +1814,63 @@ body {
   word-break: break-all;
 }
 
-/* ─── Git gutter ───────────────────────────────────────────────────────────── */
+/* ─── Git gutter markers ─────────────────────────────────────────────────── */
+/* Gutter is wide enough for the deleted triangle (11px); bars are narrower */
 .cm-git-gutter {
-  width: 4px;
+  width: 11px;
   padding: 0;
   margin-right: 2px;
+  overflow: visible;
 }
+
+.cm-git-gutter .cm-gutterElement {
+  overflow: visible !important;
+  position: relative;
+}
+
 .cm-git-marker {
-  width: 3px;
+  position: relative;
+  width: 100%;
   height: 100%;
+  background: transparent;
+  overflow: visible;
+}
+
+/* Added: narrow green bar (2px), flush right */
+.cm-git-added {
+  width: 2px;
+  margin-left: auto;
+  background: #3fb950;
   border-radius: 1px;
 }
-.cm-git-added    { background: #3fb950; }
-.cm-git-modified { background: #388bfd; }
-.cm-git-deleted  {
-  background: #f85149;
-  height: 3px !important;
-  margin-top: -1px;
-  border-radius: 0 2px 2px 0;
+
+/* Modified: narrow blue bar (2px), flush right */
+.cm-git-modified {
+  width: 2px;
+  margin-left: auto;
+  background: #388bfd;
+  border-radius: 1px;
 }
-/* Round the top of the first marker in a hunk */
-.cm-git-first.cm-git-added,
-.cm-git-first.cm-git-modified { border-radius: 2px 2px 0 0; }
-/* Round the bottom of the last marker */
-.cm-git-last.cm-git-added,
-.cm-git-last.cm-git-modified { border-radius: 0 0 2px 2px; }
-/* Single-line hunk: fully rounded */
-.cm-git-first.cm-git-last.cm-git-added,
-.cm-git-first.cm-git-last.cm-git-modified { border-radius: 2px; }
+
+/* Deleted: red right-pointing triangle at the deletion boundary */
+.cm-git-deleted {
+  height: 100% !important;
+  margin-top: 0;
+  border-radius: 0;
+  background: transparent;
+}
+.cm-git-deleted::after {
+  content: '';
+  position: absolute;
+  left: 2px;
+  top: 50%;
+  transform: translateY(-50%);
+  width: 0;
+  height: 0;
+  border-top: 5px solid transparent;
+  border-bottom: 5px solid transparent;
+  border-left: 9px solid #f85149;
+}
 
 /* ─── Hunk popup ───────────────────────────────────────────────────────────── */
 .git-hunk-popup {
@@ -2257,19 +2286,47 @@ body {
   overflow: visible;
 }
 
-/* Deleted chunk widget — make removed lines readable at full font size */
-.diff-container .cm-deletedChunk {
-  min-height: 1.6em;
-  padding: 4px 0;
+/* ── Diff change gutter: triangle arrows ── */
+.diff-container .cm-changeGutter {
+  width: 16px !important;
+  min-width: 16px !important;
+  overflow: visible !important;
 }
-.diff-container .cm-deletedChunk .cm-deletedLine {
-  display: block;
-  min-height: 1.6em;
-  padding: 1px 16px;
-  font-size: 1em;
+
+/* Remove filled square; draw triangle via ::after */
+.diff-container .cm-changedLineGutter {
+  background: transparent !important;
+  position: relative;
+  overflow: visible !important;
 }
-.diff-container .cm-deletedChunk del {
-  text-decoration: none;
+
+/* Shared triangle shape for both sides */
+.diff-container .cm-changedLineGutter::after {
+  content: '';
+  position: absolute;
+  left: 2px;
+  top: 50%;
+  transform: translateY(-50%);
+  width: 0;
+  height: 0;
+  border-top: 6px solid transparent;
+  border-bottom: 6px solid transparent;
+}
+
+/* Red → deleted lines (A/left, HEAD side) */
+.diff-container .cm-merge-a .cm-changedLineGutter::after {
+  border-left: 10px solid #e53e3e;
+}
+
+/* Green → inserted lines (B/right, working-copy side) */
+.diff-container .cm-merge-b .cm-changedLineGutter::after {
+  border-left: 10px solid #38a169;
+}
+
+/* Spacer in B editor where deleted lines used to be — tint red so the gap is obvious */
+.diff-container .cm-mergeSpacer {
+  background: rgba(229, 62, 62, 0.08) !important;
+  border-left: 3px solid #e53e3e !important;
 }
 
 /* Git panel diff button */
