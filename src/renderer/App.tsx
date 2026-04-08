@@ -297,13 +297,21 @@ export default function App() {
           break;
         case 'openSettings':   setSettingsOpen(true); break;
         case 'focusFileTree':
-          setSidebarOpen(true);
-          setSidebarTab('files');
-          setFocusFileTreeReq(v => (v ?? 0) + 1);
+          if (sidebarOpen && sidebarTab === 'files') {
+            setSidebarOpen(false);
+          } else {
+            setSidebarOpen(true);
+            setSidebarTab('files');
+            setFocusFileTreeReq(v => (v ?? 0) + 1);
+          }
           break;
         case 'focusGit':
-          setSidebarOpen(true);
-          setSidebarTab('git');
+          if (sidebarOpen && sidebarTab === 'git') {
+            setSidebarOpen(false);
+          } else {
+            setSidebarOpen(true);
+            setSidebarTab('git');
+          }
           break;
         case 'toggleTerminal':
           setTerminalOpen(v => {
@@ -339,7 +347,7 @@ export default function App() {
       window.removeEventListener('obsidian:toggle-outline', onToggleOutline as EventListener);
       window.removeEventListener('keydown', onKeyDown);
     };
-  }, [switchTab, activePath, closeTab, jumpBack, settings.appKeybindings, snapshot]);
+  }, [switchTab, activePath, closeTab, jumpBack, settings.appKeybindings, snapshot, sidebarOpen, sidebarTab]);
 
   // ─── Mark tab dirty ───────────────────────────────────────────────────────
   const markDirty = useCallback((path: string, raw: string) => {
