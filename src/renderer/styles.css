@@ -160,19 +160,26 @@ body {
   flex-shrink: 0;
   display: flex;
   flex-direction: column;
-  justify-content: space-between;
   align-items: center;
   padding: 6px 0;
   background: var(--bg-sidebar);
   border-right: 1px solid var(--border);
+  overflow: hidden;
 }
 
-.activity-bar-items,
+.activity-bar-items {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 2px;
+}
+
 .activity-bar-bottom {
   display: flex;
   flex-direction: column;
   align-items: center;
   gap: 2px;
+  margin-top: auto;
 }
 
 .activity-btn {
