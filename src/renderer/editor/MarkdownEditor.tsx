@@ -1,6 +1,6 @@
 import { useEffect, useRef, useCallback, forwardRef, useImperativeHandle, useState, useMemo } from 'react';
-import { EditorView, keymap, highlightActiveLine, drawSelection, gutter, GutterMarker } from '@codemirror/view';
-import { EditorState, Compartment, Extension, Prec } from '@codemirror/state';
+import { EditorView, keymap, highlightActiveLine, drawSelection, gutter, GutterMarker, WidgetType, Decoration, type DecorationSet } from '@codemirror/view';
+import { EditorState, Compartment, Extension, Prec, Facet, StateField } from '@codemirror/state';
 import { defaultKeymap, history, historyKeymap, indentWithTab } from '@codemirror/commands';
 import { searchKeymap, search } from '@codemirror/search';
 import { markdown, markdownLanguage } from '@codemirror/lang-markdown';
@@ -45,6 +45,40 @@ export interface MarkdownEditorProps {
   onPasteAttachment: (data: string, mimeType: string, filename: string) => Promise<string>;
   headContent?: string | null;
 }
+
+// ─── Note title (filename as heading above document content) ─────────────────
+
+const noteTitleFacet = Facet.define<string, string>({ combine: vs => vs[0] ?? '' });
+
+class NoteTitleWidget extends WidgetType {
+  constructor(readonly name: string) { super(); }
+  eq(o: NoteTitleWidget) { return this.name === o.name; }
+  toDOM() {
+    const el = document.createElement('div');
+    el.className = 'cm-note-title';
+    el.textContent = this.name;
+    return el;
+  }
+  ignoreEvent() { return false; }
+}
+
+function buildTitleDeco(state: EditorState): DecorationSet {
+  const name = state.facet(noteTitleFacet);
+  if (!name) return Decoration.none;
+  return Decoration.set([
+    Decoration.widget({ widget: new NoteTitleWidget(name), block: true, side: -1 }).range(0),
+  ]);
+}
+
+const noteTitleField = StateField.define<DecorationSet>({
+  create: buildTitleDeco,
+  update(deco, tr) {
+    if (tr.startState.facet(noteTitleFacet) !== tr.state.facet(noteTitleFacet))
+      return buildTitleDeco(tr.state);
+    return deco;
+  },
+  provide: f => EditorView.decorations.from(f),
+});
 
 // ─── Theme ───────────────────────────────────────────────────────────────────
 
@@ -313,6 +347,7 @@ const listContinuationKeymap = Prec.highest(keymap.of([{
 // ─── Static base extensions ───────────────────────────────────────────────────
 
 const BASE_EXTENSIONS: Extension[] = [
+  noteTitleField,
   listContinuationKeymap,
   history(),
   search({ top: false }),
@@ -452,9 +487,12 @@ const MarkdownEditor = forwardRef<MarkdownEditorHandle, MarkdownEditorProps>(fun
       },
     }]);
 
+    const noteName = doc.path.replace(/\\/g, '/').split('/').pop()?.replace(/\.md$/i, '') ?? '';
+
     const state = EditorState.create({
       doc: doc.raw,
       extensions: [
+        noteTitleFacet.of(noteName),
         ...BASE_EXTENSIONS,
         saveKeymap,
         updateListener,

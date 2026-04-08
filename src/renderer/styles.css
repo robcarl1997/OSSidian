@@ -719,16 +719,17 @@ body {
 
 /* ─── YAML Frontmatter ──────────────────────────────────────────────────────── */
 
-.cm-frontmatter-wrapper {
-  margin: 4px 0 10px;
-}
-
-.cm-frontmatter-title {
+.cm-note-title {
   font-size: 2em;
   font-weight: 700;
   color: var(--text-primary);
   line-height: 1.2;
-  padding: 4px 0 10px;
+  padding: 0 0 16px;
+  margin-bottom: 4px;
+}
+
+.cm-frontmatter-wrapper {
+  margin: 4px 0 10px;
 }
 
 .cm-frontmatter {

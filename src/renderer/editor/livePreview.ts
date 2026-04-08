@@ -374,19 +374,10 @@ class FrontmatterWidget extends WidgetType {
   }
 
   toDOM(): HTMLElement {
-    // Outer wrapper holds title + card as siblings
     const outer = document.createElement('div');
     outer.className = 'cm-frontmatter-wrapper';
 
-    // Title above the card (like Obsidian)
-    if (this.data.title) {
-      const h1 = document.createElement('div');
-      h1.className = 'cm-frontmatter-title';
-      h1.textContent = String(this.data.title);
-      outer.appendChild(h1);
-    }
-
-    const entries = Object.entries(this.data).filter(([k]) => k !== 'title');
+    const entries = Object.entries(this.data);
     if (entries.length > 0) {
       const card = document.createElement('div');
       card.className = 'cm-frontmatter';
