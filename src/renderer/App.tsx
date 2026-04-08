@@ -37,6 +37,8 @@ import TerminalPanel from './components/TerminalPanel';
 import DiffViewer from './components/DiffViewer';
 import ImageViewer from './components/ImageViewer';
 import PdfViewer from './components/PdfViewer';
+import BacklinksPanel from './components/BacklinksPanel';
+import { marked } from 'marked';
 
 const IMAGE_EXTS = new Set(['png','jpg','jpeg','gif','webp','svg','bmp','ico','avif']);
 
@@ -67,7 +69,7 @@ export default function App() {
   const [navHistory, setNavHistory]     = useState<{ path: string; cursor: number }[]>([]);
   const [quickOpenOpen, setQuickOpenOpen] = useState(false);
   const [sidebarOpen, setSidebarOpen]   = useState(true);
-  const [sidebarTab, setSidebarTab]     = useState<'files' | 'git'>('files');
+  const [sidebarTab, setSidebarTab]     = useState<'files' | 'git' | 'backlinks'>('files');
   const [outlineOpen, setOutlineOpen]   = useState(false);
   const [headContent, setHeadContent] = useState<string | null | undefined>(undefined);
   const [activeDiff, setActiveDiff]   = useState<{ path: string; head: string | null; current: string; readOnly?: boolean; aLabel?: string } | null>(null);
@@ -78,6 +80,10 @@ export default function App() {
   const [terminalOpen, setTerminalOpen]         = useState(false);
   const [terminalMounted, setTerminalMounted]   = useState(false);
   const [terminalPosition, setTerminalPosition] = useState<'bottom' | 'right'>('right');
+  const [splitEnabled, setSplitEnabled]         = useState(false);
+  const [splitPath, setSplitPath]               = useState<string | null>(null);
+  const [splitTabs, setSplitTabs]               = useState<NoteDocument[]>([]);
+  const [activePaneIdx, setActivePaneIdx]       = useState<0 | 1>(0);
   const [terminalSize, setTerminalSize]         = useState(260);
   const [editorSelection, setEditorSelection]   = useState<string>('');
   const activeCursorRef  = useRef<number>(0);
@@ -168,7 +174,7 @@ export default function App() {
   }, [dialog]);
 
   // ─── Open a note ─────────────────────────────────────────────────────────
-  const openNote = useCallback(async (rawTarget: string, anchor?: string, external?: boolean, fromLink?: boolean) => {
+  const openNote = useCallback(async (rawTarget: string, anchor?: string, external?: boolean, fromLink?: boolean, paneOverride?: 0 | 1) => {
     if (external) {
       window.vaultApp.openExternal(rawTarget);
       return;
@@ -194,15 +200,25 @@ export default function App() {
     // Resolve wikilink target to absolute path
     let filePath = rawTarget;
     if (!rawTarget.endsWith('.md') && !rawTarget.startsWith('/')) {
-      // Try to resolve as a note name
       const resolved = findPathByStem(rawTarget, snapshot.allPaths, activePath ?? snapshot.vaultPath);
       if (resolved) {
         filePath = resolved;
       } else if (snapshot.vaultPath) {
-        // Note doesn't exist yet – create it
         const newEntry = await window.vaultApp.createEntry(snapshot.vaultPath, rawTarget, 'file');
         filePath = newEntry.path;
       }
+    }
+
+    const pane = paneOverride ?? activePaneIdx;
+
+    if (pane === 1 && splitEnabled) {
+      // Open in right pane
+      const existing = splitTabs.find(t => t.path === filePath);
+      if (existing) { setSplitPath(filePath); return; }
+      const doc = await window.vaultApp.openNote(filePath);
+      setSplitTabs(prev => prev.find(t => t.path === filePath) ? prev : [...prev, doc]);
+      setSplitPath(filePath);
+      return;
     }
 
     // Push current position to history before navigating via a link
@@ -210,7 +226,7 @@ export default function App() {
       setNavHistory(prev => [...prev, { path: activePath, cursor: activeCursorRef.current }]);
     }
 
-    // Check if already open
+    // Check if already open in left pane
     const existing = tabs.find(t => t.path === filePath);
     if (existing) {
       setActivePath(filePath);
@@ -221,13 +237,23 @@ export default function App() {
     // Load the note
     const doc = await window.vaultApp.openNote(filePath);
     setTabs(prev => {
-      // Replace existing tab or add new
       if (prev.find(t => t.path === filePath)) return prev;
       return [...prev, doc];
     });
     setActivePath(filePath);
     if (anchor) setPendingAnchor(anchor);
-  }, [snapshot, tabs, activePath]);
+  }, [snapshot, tabs, activePath, activePaneIdx, splitEnabled, splitTabs]);
+
+  // ─── Export note ─────────────────────────────────────────────────────────
+  const exportNote = useCallback(async (format: 'html' | 'pdf') => {
+    if (!activeTab) return;
+    const html = await marked(activeTab.raw);
+    if (format === 'html') {
+      await window.vaultApp.exportHtml(activeTab.path, html);
+    } else {
+      await window.vaultApp.exportPdf(activeTab.path, html);
+    }
+  }, [activeTab]);
 
   // ─── Link click from editor ───────────────────────────────────────────────
   const handleLinkClick = useCallback((target: string, external: boolean) => {
@@ -315,6 +341,17 @@ export default function App() {
             setSidebarOpen(true);
             setSidebarTab('git');
           }
+          break;
+        case 'focusBacklinks':
+          if (sidebarOpen && sidebarTab === 'backlinks') {
+            setSidebarOpen(false);
+          } else {
+            setSidebarOpen(true);
+            setSidebarTab('backlinks');
+          }
+          break;
+        case 'splitPane':
+          setSplitEnabled(v => !v);
           break;
         case 'toggleTerminal':
           setTerminalOpen(v => {
@@ -569,6 +606,18 @@ export default function App() {
               <path d="M5 4.5 C5 7.5 11 5.5 11 7.5"/>
             </svg>
           </button>
+          <button
+            className={`activity-btn${sidebarTab === 'backlinks' && sidebarOpen ? ' active' : ''}`}
+            title="Rückverknüpfungen (Ctrl+Shift+B)"
+            onClick={() => sidebarTab === 'backlinks' ? setSidebarOpen(v => !v) : (setSidebarTab('backlinks'), setSidebarOpen(true))}
+          >
+            <svg width="18" height="18" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round">
+              <path d="M7 4H4a2 2 0 00-2 2v4a2 2 0 002 2h3"/>
+              <path d="M9 4h3a2 2 0 012 2v4a2 2 0 01-2 2H9"/>
+              <line x1="5" y1="8" x2="11" y2="8"/>
+              <polyline points="8 5 11 8 8 11"/>
+            </svg>
+          </button>
         </div>
         <div className="activity-bar-bottom">
           <button className="activity-btn" title="Einstellungen" onClick={() => setSettingsOpen(true)}>
@@ -592,7 +641,8 @@ export default function App() {
           <span className={`vault-name${!snapshot?.vaultPath ? ' no-vault' : ''}`}>
             {sidebarTab === 'files'
               ? (snapshot?.vaultPath?.replace(/\\/g, '/').split('/').pop() ?? 'Kein Vault')
-              : 'Git'}
+              : sidebarTab === 'git' ? 'Git'
+              : 'Rückverknüpfungen'}
           </span>
           {sidebarTab === 'files' && (
             <button
@@ -660,7 +710,7 @@ export default function App() {
               )
             )}
           </>
-        ) : (
+        ) : sidebarTab === 'git' ? (
           <GitPanel
             vaultPath={snapshot?.vaultPath ?? null}
             onFileOpen={openNote}
@@ -672,6 +722,11 @@ export default function App() {
               if (activePath) window.vaultApp.gitFileAtHead(activePath).then(setHeadContent);
             }}
             onRestoreComplete={handleRestoreComplete}
+          />
+        ) : (
+          <BacklinksPanel
+            targetPath={activePath}
+            onOpen={openNote}
           />
         )}
       </aside>
@@ -686,7 +741,11 @@ export default function App() {
         />
 
         <div className={`workspace-body workspace-body--${terminalOpen ? terminalPosition : 'bottom'}`}>
-        <div className="editor-area">
+        <div className={`panes-container${splitEnabled ? ' panes-container--split' : ''}`}>
+        <div
+          className={`editor-area${splitEnabled ? (activePaneIdx === 0 ? ' pane-active' : '') : ''}`}
+          onClick={splitEnabled ? () => setActivePaneIdx(0) : undefined}
+        >
           {activeImage && snapshot?.vaultPath ? (
             <ImageViewer
               path={activeImage}
@@ -759,6 +818,32 @@ export default function App() {
                   Gliederung
                 </button>
                 <div className="editor-toolbar-sep" />
+                <button
+                  className={`editor-mode-btn${splitEnabled ? ' active' : ''}`}
+                  onClick={() => {
+                    setSplitEnabled(v => {
+                      if (!v && activePath) {
+                        // Open current note in right pane on split enable
+                        window.vaultApp.openNote(activePath).then(doc => {
+                          setSplitTabs([doc]);
+                          setSplitPath(activePath);
+                        });
+                      }
+                      return !v;
+                    });
+                  }}
+                  title="Split-Ansicht (Ctrl+\)"
+                >
+                  Split
+                </button>
+                <div className="editor-toolbar-sep" />
+                <button className="editor-mode-btn" onClick={() => exportNote('html')} title="Als HTML exportieren">
+                  HTML
+                </button>
+                <button className="editor-mode-btn" onClick={() => exportNote('pdf')} title="Als PDF exportieren">
+                  PDF
+                </button>
+                <div className="editor-toolbar-sep" />
                 <span className="note-title">{activeTab.path}</span>
                 {activeTab.dirty && (
                   <span style={{ color: 'var(--accent)', fontSize: 11 }}>● Nicht gespeichert</span>
@@ -814,7 +899,74 @@ export default function App() {
               )}
             </div>
           )}
-        </div>{/* activeImage / activeDiff / activeTab */}
+        </div>{/* editor-area (left pane) */}
+
+        {/* ── Right split pane ────────────────────────────────────────── */}
+        {splitEnabled && (
+          <div
+            className={`editor-area split-pane-right${activePaneIdx === 1 ? ' pane-active' : ''}`}
+            onClick={() => setActivePaneIdx(1)}
+          >
+            <TabBar
+              tabs={splitTabs}
+              activePath={splitPath}
+              onActivate={p => setSplitPath(p)}
+              onClose={p => {
+                setSplitTabs(prev => {
+                  const next = prev.filter(t => t.path !== p);
+                  if (splitPath === p) setSplitPath(next[next.length - 1]?.path ?? null);
+                  return next;
+                });
+              }}
+            />
+            {(() => {
+              const splitTab = splitTabs.find(t => t.path === splitPath) ?? null;
+              return splitTab ? (
+                <MarkdownEditor
+                  key={splitTab.path + '-split'}
+                  doc={splitTab}
+                  editorMode={settings.editorMode}
+                  vimMode={settings.vimMode}
+                  vimKeybindings={settings.vimKeybindings}
+                  vimLeader={settings.vimLeader ?? '\\'}
+                  fontFamily={settings.editorFontFamily}
+                  fontSize={settings.editorFontSize}
+                  lineHeight={settings.editorLineHeight}
+                  linkFormat={settings.linkFormat}
+                  vaultPath={snapshot?.vaultPath ?? ''}
+                  allPaths={snapshot?.allPaths ?? []}
+                  pendingAnchor={null}
+                  onSave={newContent => {
+                    window.vaultApp.saveNote(splitTab.path, newContent);
+                    setSplitTabs(prev => prev.map(t =>
+                      t.path === splitTab.path ? { ...t, raw: newContent, dirty: false } : t
+                    ));
+                  }}
+                  onChange={newContent => {
+                    setSplitTabs(prev => prev.map(t =>
+                      t.path === splitTab.path ? { ...t, raw: newContent, dirty: true } : t
+                    ));
+                  }}
+                  onLinkClick={(target, external) => {
+                    const [note, anchor] = target.split('#');
+                    openNote(note, anchor, external, true, 1);
+                  }}
+                  onPasteAttachment={handlePasteAttachment}
+                  onHeadingsChange={headings => {
+                    setSplitTabs(prev => prev.map(t =>
+                      t.path === splitTab.path ? { ...t, headings } : t
+                    ));
+                  }}
+                />
+              ) : (
+                <div className="empty-state">
+                  <div className="empty-state-sub">Keine Notiz geöffnet</div>
+                </div>
+              );
+            })()}
+          </div>
+        )}
+        </div>{/* panes-container */}
 
         {/* ── Terminal panel ──────────────────────────────────────────── */}
         {terminalMounted && (

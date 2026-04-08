@@ -54,6 +54,12 @@ const api: VaultApi = {
     ipcRenderer.invoke('git:stage-hunk', relPath, fromLineA, toLineA, isPureInsertion, newContent),
   writeContext:   (filePath: string | null, selection: string) =>
     ipcRenderer.invoke('context:write', filePath, selection),
+  getBacklinks:   (targetPath: string) =>
+    ipcRenderer.invoke('vault:backlinks', targetPath),
+  exportHtml:     (notePath: string, html: string) =>
+    ipcRenderer.invoke('export:html', notePath, html),
+  exportPdf:      (notePath: string, html: string) =>
+    ipcRenderer.invoke('export:pdf', notePath, html),
 };
 
 contextBridge.exposeInMainWorld('vaultApp', api);

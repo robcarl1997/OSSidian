@@ -11,6 +11,7 @@ import type {
   VaultSnapshot,
   NoteDocument,
   SearchResult,
+  BacklinkResult,
   RenameResult,
   VaultChangeEvent,
   GitStatus,
@@ -504,6 +505,92 @@ function setupIPC(): void {
     return CONTEXT_FILE;
   });
 
+  // ── vault:backlinks ──────────────────────────────────────────────────────
+  ipcMain.handle('vault:backlinks', (_e, targetPath: string): BacklinkResult[] => {
+    if (!vaultPath) return [];
+    const snap = buildSnapshot();
+    const targetStem = path.basename(targetPath, '.md').toLowerCase();
+    // Also build a relative path for markdown-link matching
+    const targetRel  = path.relative(vaultPath, targetPath).replace(/\\/g, '/');
+    const stemRe     = new RegExp(`\\[\\[${escapeRe(targetStem)}(#[^\\]|]*)?(?:\\|[^\\]]*)?\\]\\]`, 'i');
+    const mdRe       = new RegExp(`\\[([^\\]]*)\\]\\(${escapeRe(targetRel)}(?:#[^)]*)?\\)`, 'i');
+    const results: BacklinkResult[] = [];
+
+    for (const filePath of snap.allPaths) {
+      if (filePath === targetPath) continue;
+      try {
+        const cached = noteCache.get(filePath);
+        const raw = cached?.raw ?? fs.readFileSync(filePath, 'utf-8');
+        const lines = raw.split('\n');
+        for (let i = 0; i < lines.length; i++) {
+          const line = lines[i];
+          if (stemRe.test(line) || mdRe.test(line)) {
+            results.push({
+              path: filePath,
+              name: path.basename(filePath, '.md'),
+              excerpt: line.trim().slice(0, 120),
+              line: i + 1,
+            });
+          }
+        }
+      } catch { /* skip unreadable */ }
+    }
+    return results;
+  });
+
+  // ── export:html ──────────────────────────────────────────────────────────
+  ipcMain.handle('export:html', async (_e, notePath: string, html: string) => {
+    const defaultName = path.basename(notePath, '.md') + '.html';
+    const { filePath: savePath } = await dialog.showSaveDialog(mainWindow!, {
+      defaultPath: path.join(vaultPath ?? os.homedir(), defaultName),
+      filters: [{ name: 'HTML-Datei', extensions: ['html'] }],
+    });
+    if (!savePath) return;
+    const title = path.basename(notePath, '.md');
+    const full = `<!DOCTYPE html>
+<html lang="de">
+<head>
+  <meta charset="UTF-8">
+  <title>${title}</title>
+  <style>
+    body{font-family:Georgia,'Times New Roman',serif;max-width:800px;margin:48px auto;padding:0 24px;line-height:1.75;color:#2c2c2c;background:#fff}
+    h1,h2,h3,h4{font-weight:600;margin-top:2em;line-height:1.3}
+    code{background:#f0f0f0;padding:2px 5px;border-radius:3px;font-family:monospace;font-size:.9em}
+    pre{background:#f0f0f0;padding:16px;border-radius:6px;overflow:auto}pre code{background:none;padding:0}
+    blockquote{border-left:4px solid #ccc;margin:1em 0;padding:.5em 1em;color:#555}
+    a{color:#0066cc}hr{border:none;border-top:1px solid #ddd;margin:2em 0}
+    table{border-collapse:collapse;width:100%}td,th{border:1px solid #ddd;padding:8px 12px}th{background:#f5f5f5}
+  </style>
+</head>
+<body>
+${html}
+</body>
+</html>`;
+    fs.writeFileSync(savePath, full, 'utf-8');
+  });
+
+  // ── export:pdf ──────────────────────────────────────────────────────────
+  ipcMain.handle('export:pdf', async (_e, notePath: string, html: string) => {
+    const defaultName = path.basename(notePath, '.md') + '.pdf';
+    const { filePath: savePath } = await dialog.showSaveDialog(mainWindow!, {
+      defaultPath: path.join(vaultPath ?? os.homedir(), defaultName),
+      filters: [{ name: 'PDF-Datei', extensions: ['pdf'] }],
+    });
+    if (!savePath) return;
+    const title = path.basename(notePath, '.md');
+    const fullHtml = `<!DOCTYPE html><html lang="de"><head><meta charset="UTF-8"><title>${title}</title>
+<style>body{font-family:Georgia,serif;max-width:750px;margin:48px auto;padding:0 24px;line-height:1.75;color:#2c2c2c}h1,h2,h3,h4{font-weight:600;margin-top:2em;line-height:1.3}code{background:#f0f0f0;padding:2px 4px;border-radius:3px;font-family:monospace;font-size:.9em}pre{background:#f0f0f0;padding:16px;border-radius:6px;overflow:auto}pre code{background:none;padding:0}blockquote{border-left:4px solid #ccc;margin:1em 0;padding:.5em 1em;color:#555}a{color:#0066cc}hr{border:none;border-top:1px solid #ddd;margin:2em 0}table{border-collapse:collapse;width:100%}td,th{border:1px solid #ddd;padding:8px 12px}th{background:#f5f5f5}</style></head><body>${html}</body></html>`;
+
+    const win = new BrowserWindow({ show: false, webPreferences: { nodeIntegration: false, contextIsolation: true } });
+    try {
+      await win.loadURL(`data:text/html;charset=utf-8,${encodeURIComponent(fullHtml)}`);
+      const pdfData = await win.webContents.printToPDF({});
+      fs.writeFileSync(savePath, pdfData);
+    } finally {
+      win.destroy();
+    }
+  });
+
   // ── Terminal (node-pty) ──────────────────────────────────────────────────
   const ptys = new Map<number, pty.IPty>();
   const userShell = process.env.SHELL || (process.platform === 'win32' ? 'powershell.exe' : 'bash');
@@ -548,6 +635,12 @@ function setupIPC(): void {
   });
   ipcMain.handle('window:close',           () => mainWindow?.close());
   ipcMain.handle('window:is-maximized',    () => mainWindow?.isMaximized() ?? false);
+}
+
+// ─── Helpers ──────────────────────────────────────────────────────────────────
+
+function escapeRe(s: string): string {
+  return s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 }
 
 // ─── Link rewriting ───────────────────────────────────────────────────────────

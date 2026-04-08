@@ -377,8 +377,10 @@ const ACTION_LABELS: Record<AppAction, string> = {
   tabClose:       'Tab schließen',
   jumpBack:       'Zurück navigieren',
   newNote:        'Neue Notiz erstellen',
-  openSettings:   'Einstellungen öffnen',
-  toggleTerminal: 'Terminal umschalten',
+  openSettings:    'Einstellungen öffnen',
+  toggleTerminal:  'Terminal umschalten',
+  focusBacklinks:  'Rückverknüpfungen anzeigen',
+  splitPane:       'Split-Ansicht umschalten',
 };
 
 const VIM_COMMANDS: Partial<Record<AppAction, string>> = {

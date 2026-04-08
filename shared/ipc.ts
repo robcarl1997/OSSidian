@@ -22,7 +22,9 @@ export type AppAction =
   | 'openSettings'
   | 'toggleTerminal'
   | 'focusFileTree'
-  | 'focusGit';
+  | 'focusGit'
+  | 'focusBacklinks'
+  | 'splitPane';
 
 export interface AppKeybinding {
   key: string;      // normalised combo, e.g. "Ctrl+P", "Ctrl+Shift+O"
@@ -72,6 +74,8 @@ export const DEFAULT_SETTINGS: AppSettings = {
     { key: 'Ctrl+`',         action: 'toggleTerminal' },
     { key: 'Ctrl+Shift+E',  action: 'focusFileTree'  },
     { key: 'Ctrl+Shift+G',  action: 'focusGit'       },
+    { key: 'Ctrl+Shift+B',  action: 'focusBacklinks' },
+    { key: 'Ctrl+\\',       action: 'splitPane'      },
   ],
 };
 
@@ -114,6 +118,13 @@ export interface SearchResult {
   path: string;
   name: string;
   excerpt: string;
+}
+
+export interface BacklinkResult {
+  path: string;
+  name: string;
+  excerpt: string;
+  line: number;
 }
 
 // ─── Events ──────────────────────────────────────────────────────────────────
@@ -180,6 +191,9 @@ export interface VaultApi {
   gitRestore(paths: string[]): Promise<void>;
   stageHunk(relPath: string, fromLineA: number, toLineA: number, isPureInsertion: boolean, newContent: string[]): Promise<void>;
   writeContext(filePath: string | null, selection: string): Promise<string>;
+  getBacklinks(targetPath: string): Promise<BacklinkResult[]>;
+  exportHtml(notePath: string, html: string): Promise<void>;
+  exportPdf(notePath: string, html: string): Promise<void>;
 }
 
 export interface WindowControls {
