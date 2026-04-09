@@ -381,6 +381,9 @@ const ACTION_LABELS: Record<AppAction, string> = {
   toggleTerminal:  'Terminal umschalten',
   focusBacklinks:  'Rückverknüpfungen anzeigen',
   splitPane:       'Split-Ansicht umschalten',
+  paneShrink:      'Linke Pane verkleinern',
+  paneGrow:        'Linke Pane vergrößern',
+  paneReset:       'Pane-Verhältnis zurücksetzen (50/50)',
 };
 
 const VIM_COMMANDS: Partial<Record<AppAction, string>> = {

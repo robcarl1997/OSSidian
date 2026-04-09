@@ -24,7 +24,10 @@ export type AppAction =
   | 'focusFileTree'
   | 'focusGit'
   | 'focusBacklinks'
-  | 'splitPane';
+  | 'splitPane'
+  | 'paneShrink'
+  | 'paneGrow'
+  | 'paneReset';
 
 export interface AppKeybinding {
   key: string;      // normalised combo, e.g. "Ctrl+P", "Ctrl+Shift+O"
@@ -46,6 +49,7 @@ export interface AppSettings {
   appKeybindings: AppKeybinding[];
   attachmentFolder: string;    // vault-relative folder for pasted images
   terminalPosition: 'bottom' | 'right';
+  splitPaneRatio: number;      // 0.1 .. 0.9, fraction of width given to left pane
 }
 
 export const DEFAULT_SETTINGS: AppSettings = {
@@ -62,6 +66,7 @@ export const DEFAULT_SETTINGS: AppSettings = {
   vimLeader: '\\',
   attachmentFolder: 'attachments',
   terminalPosition: 'right',
+  splitPaneRatio: 0.5,
   appKeybindings: [
     { key: 'Ctrl+P',         action: 'quickOpen'     },
     { key: 'Ctrl+B',         action: 'toggleSidebar' },
@@ -76,6 +81,9 @@ export const DEFAULT_SETTINGS: AppSettings = {
     { key: 'Ctrl+Shift+G',  action: 'focusGit'       },
     { key: 'Ctrl+Shift+B',  action: 'focusBacklinks' },
     { key: 'Ctrl+\\',       action: 'splitPane'      },
+    { key: 'Ctrl+Alt+ArrowLeft',  action: 'paneShrink' },
+    { key: 'Ctrl+Alt+ArrowRight', action: 'paneGrow'   },
+    { key: 'Ctrl+Alt+0',          action: 'paneReset'  },
   ],
 };
 

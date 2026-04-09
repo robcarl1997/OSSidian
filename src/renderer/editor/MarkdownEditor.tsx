@@ -691,16 +691,33 @@ const MarkdownEditor = forwardRef<MarkdownEditorHandle, MarkdownEditorProps>(fun
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []); // only on mount
 
-  // ── Swap document when the note path changes ───────────────────────────────
+  // ── Swap document when the note path changes, OR sync raw from another pane ─
+  //
+  // Two cases:
+  //   1. Path changed → load fresh document, place cursor at start.
+  //   2. Same path, raw differs → another pane (or external watcher) edited the
+  //      same note. Replace content but preserve cursor position so the user
+  //      doesn't lose their place. Skip if the editor itself just produced this
+  //      raw (avoid feedback loop).
   useEffect(() => {
     const view = viewRef.current;
     if (!view) return;
+    const currentRaw = view.state.doc.toString();
 
-    if (doc.path !== pathRef.current || view.state.doc.toString() !== doc.raw) {
+    if (doc.path !== pathRef.current) {
+      // Case 1: full document swap
       pathRef.current = doc.path;
       view.dispatch({
         changes: { from: 0, to: view.state.doc.length, insert: doc.raw },
         selection: { anchor: 0 },
+      });
+    } else if (currentRaw !== doc.raw) {
+      // Case 2: external content update on same path — preserve cursor
+      const oldHead = view.state.selection.main.head;
+      const newHead = Math.min(oldHead, doc.raw.length);
+      view.dispatch({
+        changes: { from: 0, to: view.state.doc.length, insert: doc.raw },
+        selection: { anchor: newHead },
       });
     }
   }, [doc.path, doc.raw]);

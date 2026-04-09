@@ -84,8 +84,10 @@ export default function App() {
   const [splitPath, setSplitPath]               = useState<string | null>(null);
   const [splitTabs, setSplitTabs]               = useState<NoteDocument[]>([]);
   const [activePaneIdx, setActivePaneIdx]       = useState<0 | 1>(0);
+  const [splitHeadContent, setSplitHeadContent] = useState<string | null | undefined>(undefined);
   const [terminalSize, setTerminalSize]         = useState(260);
   const [editorSelection, setEditorSelection]   = useState<string>('');
+  const splitRatioRef = useRef<number>(0.5);
   const activeCursorRef    = useRef<number>(0);
   const pendingCursors     = useRef(new Map<string, number>());
   const editorRef          = useRef<MarkdownEditorHandle>(null);
@@ -109,6 +111,12 @@ export default function App() {
 
   const settings: AppSettings = snapshot?.settings ?? DEFAULT_SETTINGS;
   const activeTab = tabs.find(t => t.path === activePath) ?? null;
+  const splitTab  = splitTabs.find(t => t.path === splitPath) ?? null;
+  // Single source of truth for which note is "active" — used by the editor toolbar.
+  const focusedTab = activePaneIdx === 1 ? splitTab : activeTab;
+  // Effective split ratio (clamped 0.1..0.9)
+  const splitRatio = Math.max(0.1, Math.min(0.9, settings.splitPaneRatio ?? 0.5));
+  useEffect(() => { splitRatioRef.current = splitRatio; }, [splitRatio]);
 
   // ─── Apply theme ────────────────────────────────────────────────────────────
   useEffect(() => {
@@ -433,6 +441,26 @@ export default function App() {
             focusPane(activePaneIdxRef.current === 0 ? 1 : 0);
           }
           break;
+        case 'paneShrink':
+          if (splitEnabledRef.current) {
+            const next = Math.max(0.1, +(splitRatioRef.current - 0.05).toFixed(3));
+            window.vaultApp.updateSettings({ splitPaneRatio: next }).then(updated =>
+              setSnapshot(p => p ? { ...p, settings: updated } : p));
+          }
+          break;
+        case 'paneGrow':
+          if (splitEnabledRef.current) {
+            const next = Math.min(0.9, +(splitRatioRef.current + 0.05).toFixed(3));
+            window.vaultApp.updateSettings({ splitPaneRatio: next }).then(updated =>
+              setSnapshot(p => p ? { ...p, settings: updated } : p));
+          }
+          break;
+        case 'paneReset':
+          if (splitEnabledRef.current) {
+            window.vaultApp.updateSettings({ splitPaneRatio: 0.5 }).then(updated =>
+              setSnapshot(p => p ? { ...p, settings: updated } : p));
+          }
+          break;
         case 'toggleTerminal':
           setTerminalOpen(v => {
             if (!v) {
@@ -490,9 +518,12 @@ export default function App() {
     };
   }, [switchTab, activePath, closeTab, jumpBack, settings.appKeybindings, snapshot, sidebarOpen, sidebarTab, openSplit, closeSplitPane, focusPane]);
 
-  // ─── Mark tab dirty ───────────────────────────────────────────────────────
+  // ─── Mark tab dirty (in BOTH panes if same path is open) ─────────────────
   const markDirty = useCallback((path: string, raw: string) => {
     setTabs(prev =>
+      prev.map(t => t.path === path ? { ...t, raw, dirty: true } : t)
+    );
+    setSplitTabs(prev =>
       prev.map(t => t.path === path ? { ...t, raw, dirty: true } : t)
     );
   }, []);
@@ -503,9 +534,15 @@ export default function App() {
     setTabs(prev =>
       prev.map(t => t.path === path ? { ...t, raw, dirty: false } : t)
     );
+    setSplitTabs(prev =>
+      prev.map(t => t.path === path ? { ...t, raw, dirty: false } : t)
+    );
   }, []);
 
-  // ─── Autosave on change ───────────────────────────────────────────────────
+  // ─── Per-pane autosave timers (so concurrent edits in both panes don't fight) ─
+  const splitAutosaveTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  // ─── Autosave on change (left pane) ──────────────────────────────────────
   const handleEditorChange = useCallback((raw: string) => {
     if (!activePath) return;
     markDirty(activePath, raw);
@@ -516,10 +553,26 @@ export default function App() {
     }, AUTOSAVE_MS);
   }, [activePath, markDirty, saveNote]);
 
-  // ─── Explicit save ────────────────────────────────────────────────────────
+  // ─── Explicit save (left pane) ────────────────────────────────────────────
   const handleEditorSave = useCallback((raw: string) => {
     if (activePath) saveNote(activePath, raw);
   }, [activePath, saveNote]);
+
+  // ─── Autosave on change (right pane) ─────────────────────────────────────
+  const handleSplitEditorChange = useCallback((raw: string) => {
+    if (!splitPath) return;
+    markDirty(splitPath, raw);
+
+    if (splitAutosaveTimer.current) clearTimeout(splitAutosaveTimer.current);
+    splitAutosaveTimer.current = setTimeout(() => {
+      saveNote(splitPath, raw);
+    }, AUTOSAVE_MS);
+  }, [splitPath, markDirty, saveNote]);
+
+  // ─── Explicit save (right pane) ───────────────────────────────────────────
+  const handleSplitEditorSave = useCallback((raw: string) => {
+    if (splitPath) saveNote(splitPath, raw);
+  }, [splitPath, saveNote]);
 
   // ─── Settings ─────────────────────────────────────────────────────────────
   const handleSettingsSave = useCallback(async (partial: Partial<AppSettings>) => {
@@ -577,6 +630,13 @@ export default function App() {
     setHeadContent(undefined);
     window.vaultApp.gitFileAtHead(activePath).then(setHeadContent);
   }, [activePath]);
+
+  // ─── Fetch HEAD content for right-pane git gutter ────────────────────────
+  useEffect(() => {
+    if (!splitPath) { setSplitHeadContent(undefined); return; }
+    setSplitHeadContent(undefined);
+    window.vaultApp.gitFileAtHead(splitPath).then(setSplitHeadContent);
+  }, [splitPath]);
 
   // ─── Paste attachment ─────────────────────────────────────────────────────
   const handlePasteAttachment = useCallback(async (data: string, mimeType: string, filename: string): Promise<string> => {
@@ -835,19 +895,71 @@ export default function App() {
 
       {/* ── Workspace ────────────────────────────────────────────────────── */}
       <main className="workspace">
-        <TabBar
-          tabs={tabs}
-          activePath={activePath}
-          onActivate={p => { setActivePath(p); setActiveDiff(null); setActiveImage(null); setActivePdf(null); }}
-          onClose={closeTab}
-        />
-
         <div className={`workspace-body workspace-body--${terminalOpen ? terminalPosition : 'bottom'}`}>
+        {/* Editor toolbar applies to whichever pane is active */}
+        {focusedTab && !activeImage && !activePdf && !activeDiff && (
+          <div className="editor-toolbar">
+            <button
+              className={`editor-mode-btn${settings.editorMode === 'live-preview' ? ' active' : ''}`}
+              onClick={() => handleSettingsSave({ editorMode: 'live-preview' })}
+            >
+              Live Preview
+            </button>
+            <button
+              className={`editor-mode-btn${settings.editorMode === 'source' ? ' active' : ''}`}
+              onClick={() => handleSettingsSave({ editorMode: 'source' })}
+            >
+              Quelltext
+            </button>
+            <div className="editor-toolbar-sep" />
+            <button
+              className={`editor-mode-btn${settings.vimMode ? ' active' : ''}`}
+              onClick={() => handleSettingsSave({ vimMode: !settings.vimMode })}
+            >
+              VIM
+            </button>
+            <div className="editor-toolbar-sep" />
+            <button
+              className={`editor-mode-btn${outlineOpen ? ' active' : ''}`}
+              onClick={() => setOutlineOpen(v => !v)}
+              title="Gliederung (Ctrl+Shift+O)"
+            >
+              Gliederung
+            </button>
+            <div className="editor-toolbar-sep" />
+            <button
+              className={`editor-mode-btn${splitEnabled ? ' active' : ''}`}
+              onClick={() => splitEnabled ? closeSplitPane() : openSplit()}
+              title="Split-Ansicht (Ctrl+\ | :vsplit | Ctrl+W v)"
+            >
+              Split
+            </button>
+            <div className="editor-toolbar-sep" />
+            <button className="editor-mode-btn" onClick={() => exportNote('html')} title="Als HTML exportieren">
+              HTML
+            </button>
+            <button className="editor-mode-btn" onClick={() => exportNote('pdf')} title="Als PDF exportieren">
+              PDF
+            </button>
+            <div className="editor-toolbar-sep" />
+            <span className="note-title">{focusedTab.path}</span>
+            {focusedTab.dirty && (
+              <span style={{ color: 'var(--accent)', fontSize: 11 }}>● Nicht gespeichert</span>
+            )}
+          </div>
+        )}
         <div className={`panes-container${splitEnabled ? ' panes-container--split' : ''}`}>
         <div
           className={`editor-area${splitEnabled ? (activePaneIdx === 0 ? ' pane-active' : '') : ''}`}
+          style={splitEnabled ? { flex: `${splitRatio} 1 0` } : undefined}
           onClick={splitEnabled ? () => setActivePaneIdx(0) : undefined}
         >
+          <TabBar
+            tabs={tabs}
+            activePath={activePath}
+            onActivate={p => { setActivePath(p); setActiveDiff(null); setActiveImage(null); setActivePdf(null); }}
+            onClose={closeTab}
+          />
           {activeImage && snapshot?.vaultPath ? (
             <ImageViewer
               path={activeImage}
@@ -890,57 +1002,6 @@ export default function App() {
             />
           ) : activeTab ? (
             <>
-              {/* Editor toolbar */}
-              <div className="editor-toolbar">
-                <button
-                  className={`editor-mode-btn${settings.editorMode === 'live-preview' ? ' active' : ''}`}
-                  onClick={() => handleSettingsSave({ editorMode: 'live-preview' })}
-                >
-                  Live Preview
-                </button>
-                <button
-                  className={`editor-mode-btn${settings.editorMode === 'source' ? ' active' : ''}`}
-                  onClick={() => handleSettingsSave({ editorMode: 'source' })}
-                >
-                  Quelltext
-                </button>
-                <div className="editor-toolbar-sep" />
-                <button
-                  className={`editor-mode-btn${settings.vimMode ? ' active' : ''}`}
-                  onClick={() => handleSettingsSave({ vimMode: !settings.vimMode })}
-                >
-                  VIM
-                </button>
-                <div className="editor-toolbar-sep" />
-                <button
-                  className={`editor-mode-btn${outlineOpen ? ' active' : ''}`}
-                  onClick={() => setOutlineOpen(v => !v)}
-                  title="Gliederung (Ctrl+Shift+O)"
-                >
-                  Gliederung
-                </button>
-                <div className="editor-toolbar-sep" />
-                <button
-                  className={`editor-mode-btn${splitEnabled ? ' active' : ''}`}
-                  onClick={() => splitEnabled ? closeSplitPane() : openSplit()}
-                  title="Split-Ansicht (Ctrl+\ | :vsplit | Ctrl+W v)"
-                >
-                  Split
-                </button>
-                <div className="editor-toolbar-sep" />
-                <button className="editor-mode-btn" onClick={() => exportNote('html')} title="Als HTML exportieren">
-                  HTML
-                </button>
-                <button className="editor-mode-btn" onClick={() => exportNote('pdf')} title="Als PDF exportieren">
-                  PDF
-                </button>
-                <div className="editor-toolbar-sep" />
-                <span className="note-title">{activeTab.path}</span>
-                {activeTab.dirty && (
-                  <span style={{ color: 'var(--accent)', fontSize: 11 }}>● Nicht gespeichert</span>
-                )}
-              </div>
-
               <MarkdownEditor
                 ref={editorRef}
                 key={activeTab.path}
@@ -992,10 +1053,38 @@ export default function App() {
           )}
         </div>{/* editor-area (left pane) */}
 
+        {/* ── Resize handle (drag) ────────────────────────────────────── */}
+        {splitEnabled && (
+          <div
+            className="pane-resize-handle"
+            onMouseDown={e => {
+              e.preventDefault();
+              const container = (e.currentTarget.parentElement as HTMLElement);
+              const startX = e.clientX;
+              const startRatio = splitRatioRef.current;
+              const totalWidth = container.getBoundingClientRect().width;
+              const onMove = (ev: MouseEvent) => {
+                const dx = ev.clientX - startX;
+                const next = Math.max(0.1, Math.min(0.9, startRatio + dx / totalWidth));
+                // Update via settings so it persists
+                window.vaultApp.updateSettings({ splitPaneRatio: +next.toFixed(3) }).then(updated =>
+                  setSnapshot(p => p ? { ...p, settings: updated } : p));
+              };
+              const onUp = () => {
+                window.removeEventListener('mousemove', onMove);
+                window.removeEventListener('mouseup', onUp);
+              };
+              window.addEventListener('mousemove', onMove);
+              window.addEventListener('mouseup', onUp);
+            }}
+          />
+        )}
+
         {/* ── Right split pane ────────────────────────────────────────── */}
         {splitEnabled && (
           <div
             className={`editor-area split-pane-right${activePaneIdx === 1 ? ' pane-active' : ''}`}
+            style={{ flex: `${1 - splitRatio} 1 0` }}
             onClick={() => setActivePaneIdx(1)}
           >
             <TabBar
@@ -1018,52 +1107,41 @@ export default function App() {
                 });
               }}
             />
-            {(() => {
-              const splitTab = splitTabs.find(t => t.path === splitPath) ?? null;
-              return splitTab ? (
-                <MarkdownEditor
-                  ref={splitEditorRef}
-                  key={splitTab.path + '-split'}
-                  doc={splitTab}
-                  editorMode={settings.editorMode}
-                  vimMode={settings.vimMode}
-                  vimKeybindings={settings.vimKeybindings}
-                  vimLeader={settings.vimLeader ?? '\\'}
-                  fontFamily={settings.editorFontFamily}
-                  fontSize={settings.editorFontSize}
-                  lineHeight={settings.editorLineHeight}
-                  linkFormat={settings.linkFormat}
-                  vaultPath={snapshot?.vaultPath ?? ''}
-                  allPaths={snapshot?.allPaths ?? []}
-                  pendingAnchor={null}
-                  onSave={newContent => {
-                    window.vaultApp.saveNote(splitTab.path, newContent);
-                    setSplitTabs(prev => prev.map(t =>
-                      t.path === splitTab.path ? { ...t, raw: newContent, dirty: false } : t
-                    ));
-                  }}
-                  onChange={newContent => {
-                    setSplitTabs(prev => prev.map(t =>
-                      t.path === splitTab.path ? { ...t, raw: newContent, dirty: true } : t
-                    ));
-                  }}
-                  onLinkClick={(target, external) => {
-                    const [note, anchor] = target.split('#');
-                    openNote(note, anchor, external, true, 1);
-                  }}
-                  onPasteAttachment={handlePasteAttachment}
-                  onHeadingsChange={headings => {
-                    setSplitTabs(prev => prev.map(t =>
-                      t.path === splitTab.path ? { ...t, headings } : t
-                    ));
-                  }}
-                />
-              ) : (
-                <div className="empty-state">
-                  <div className="empty-state-sub">Keine Notiz geöffnet</div>
-                </div>
-              );
-            })()}
+            {splitTab ? (
+              <MarkdownEditor
+                ref={splitEditorRef}
+                key={splitTab.path + '-split'}
+                doc={splitTab}
+                editorMode={settings.editorMode}
+                vimMode={settings.vimMode}
+                vimKeybindings={settings.vimKeybindings}
+                vimLeader={settings.vimLeader ?? '\\'}
+                fontFamily={settings.editorFontFamily}
+                fontSize={settings.editorFontSize}
+                lineHeight={settings.editorLineHeight}
+                linkFormat={settings.linkFormat}
+                vaultPath={snapshot?.vaultPath ?? ''}
+                allPaths={snapshot?.allPaths ?? []}
+                pendingAnchor={null}
+                onSave={handleSplitEditorSave}
+                onChange={handleSplitEditorChange}
+                onLinkClick={(target, external) => {
+                  const [note, anchor] = target.split('#');
+                  openNote(note, anchor, external, true, 1);
+                }}
+                headContent={splitHeadContent}
+                onPasteAttachment={handlePasteAttachment}
+                onHeadingsChange={headings => {
+                  setSplitTabs(prev => prev.map(t =>
+                    t.path === splitTab.path ? { ...t, headings } : t
+                  ));
+                }}
+              />
+            ) : (
+              <div className="empty-state">
+                <div className="empty-state-sub">Keine Notiz geöffnet</div>
+              </div>
+            )}
           </div>
         )}
         </div>{/* panes-container */}

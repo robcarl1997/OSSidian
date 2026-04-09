@@ -2454,12 +2454,7 @@ body {
 .panes-container--split .editor-area {
   flex: 1;
   min-width: 0;
-  border-right: 2px solid var(--border);
   position: relative;
-}
-
-.panes-container--split .editor-area:last-child {
-  border-right: none;
 }
 
 /* VS Code-style: thin colored top border on the active pane */
@@ -2478,4 +2473,19 @@ body {
   display: flex;
   flex-direction: column;
   min-width: 0;
+}
+
+/* Drag handle between split panes */
+.pane-resize-handle {
+  flex: 0 0 4px;
+  width: 4px;
+  cursor: col-resize;
+  background: var(--border);
+  position: relative;
+  z-index: 5;
+  transition: background 0.15s;
+}
+.pane-resize-handle:hover,
+.pane-resize-handle:active {
+  background: color-mix(in srgb, var(--accent) 60%, transparent);
 }
