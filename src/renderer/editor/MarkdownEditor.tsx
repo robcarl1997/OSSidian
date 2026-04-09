@@ -1,6 +1,6 @@
 import { useEffect, useRef, useCallback, forwardRef, useImperativeHandle, useState, useMemo } from 'react';
 import { EditorView, keymap, highlightActiveLine, drawSelection, gutter, GutterMarker, WidgetType, Decoration, type DecorationSet } from '@codemirror/view';
-import { EditorState, Compartment, Extension, Prec, Facet, StateField } from '@codemirror/state';
+import { EditorState, Compartment, Extension, Prec, Facet, StateField, StateEffect } from '@codemirror/state';
 import { defaultKeymap, history, historyKeymap, indentWithTab } from '@codemirror/commands';
 import { searchKeymap, search } from '@codemirror/search';
 import { markdown, markdownLanguage } from '@codemirror/lang-markdown';
@@ -276,6 +276,54 @@ function registerAppVimCommands(): void {
   // Default normal-mode mappings (can be overridden via vimKeybindings settings)
   Vim.map('gt', ':tabnext<CR>', 'normal');
   Vim.map('gT', ':tabprev<CR>', 'normal');
+
+  // ── Logical-line k/j (workaround for cursor-jump bug) ───────────────────
+  // The default k/j call findPosV → moveVertically, which jumps several lines
+  // past block widgets (e.g. our table widget) instead of moving by one. Use
+  // a logical-line motion that just decrements/increments the doc line number.
+  // Stored on the vim state: vim.lastHPos preserves the goal column across
+  // consecutive vertical moves, mirroring real Vim's behavior.
+  type VimMotionFn = (
+    cm: { firstLine(): number; lastLine(): number; getLine(n: number): string },
+    head: { line: number; ch: number },
+    args: { forward: boolean; repeat?: number; repeatOffset?: number },
+    vim: { lastHPos?: number; lastMotion?: unknown },
+  ) => { line: number; ch: number };
+
+  const moveByLogicalLines: VimMotionFn = (cm, head, args, vim) => {
+    let endCh = head.ch;
+    // Preserve column across consecutive vertical motions
+    if (vim.lastMotion === moveByLogicalLines) {
+      endCh = vim.lastHPos ?? head.ch;
+    } else {
+      vim.lastHPos = head.ch;
+    }
+
+    const repeat = (args.repeat ?? 1) + (args.repeatOffset ?? 0);
+    let newLine = args.forward ? head.line + repeat : head.line - repeat;
+    const first = cm.firstLine();
+    const last  = cm.lastLine();
+    if (newLine < first) newLine = first;
+    if (newLine > last)  newLine = last;
+
+    const lineText = cm.getLine(newLine) ?? '';
+    return { line: newLine, ch: Math.min(endCh, lineText.length) };
+  };
+
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  (Vim as any).defineMotion('moveByLogicalLines', moveByLogicalLines);
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const mapCommand = (Vim as any).mapCommand as (
+    keys: string,
+    type: string,
+    name: string,
+    args: object,
+    extra: object,
+  ) => void;
+  mapCommand('j', 'motion', 'moveByLogicalLines', { forward: true,  linewise: true }, { context: 'normal' });
+  mapCommand('k', 'motion', 'moveByLogicalLines', { forward: false, linewise: true }, { context: 'normal' });
+  mapCommand('j', 'motion', 'moveByLogicalLines', { forward: true,  linewise: true }, { context: 'visual' });
+  mapCommand('k', 'motion', 'moveByLogicalLines', { forward: false, linewise: true }, { context: 'visual' });
 }
 
 // ─── Relative line numbers ────────────────────────────────────────────────────
@@ -304,6 +352,66 @@ const relativeLineNumbers = gutter({
   lineMarkerChange: (update) => update.selectionSet || update.docChanged,
   renderEmptyElements: false,
 });
+
+// ─── Logical-line cursor up/down ─────────────────────────────────────────────
+//
+// CodeMirror's default ArrowUp/ArrowDown commands (cursorLineUp/Down) use
+// `view.moveVertically`, which computes the new position from screen
+// coordinates via posAtCoords. When a block widget (like our table widget)
+// sits between the cursor and the document top, the geometry calculation can
+// jump the cursor several lines past the widget instead of moving by exactly
+// one line. The same problem hits Vim's `k`/`j` motions, since they call
+// `findPosV` → `moveVertically` internally.
+//
+// We work around this by moving by one DOCUMENT line at the same column,
+// preserving a "goal column" across consecutive vertical moves so behavior
+// matches what users expect from arrow keys.
+
+const setGoalColumn = StateEffect.define<number | null>();
+
+const goalColumnField = StateField.define<number | null>({
+  create: () => null,
+  update: (value, tr) => {
+    if (tr.docChanged) return null;
+    for (const e of tr.effects) if (e.is(setGoalColumn)) return e.value;
+    // Any selection change that ISN'T from our own logical-line move clears
+    // the goal column. We tag our own dispatches via the effect so the new
+    // value survives.
+    if (tr.selection) {
+      const hasOurEffect = tr.effects.some(e => e.is(setGoalColumn));
+      if (!hasOurEffect) return null;
+    }
+    return value;
+  },
+});
+
+function moveCursorByLogicalLine(view: EditorView, forward: boolean): boolean {
+  const sel = view.state.selection.main;
+  if (!sel.empty) return false;
+  const doc = view.state.doc;
+  const curLine = doc.lineAt(sel.head);
+  const newLineNo = forward ? curLine.number + 1 : curLine.number - 1;
+  if (newLineNo < 1 || newLineNo > doc.lines) return false;
+
+  // Preserve goal column across consecutive vertical moves
+  const stored = view.state.field(goalColumnField, false);
+  const goalCol = stored ?? (sel.head - curLine.from);
+
+  const newLine = doc.line(newLineNo);
+  const newHead = newLine.from + Math.min(goalCol, newLine.length);
+
+  view.dispatch({
+    selection: { anchor: newHead },
+    effects: setGoalColumn.of(goalCol),
+    scrollIntoView: true,
+  });
+  return true;
+}
+
+const logicalLineKeymap = Prec.highest(keymap.of([
+  { key: 'ArrowUp',   run: view => moveCursorByLogicalLine(view, false), preventDefault: true },
+  { key: 'ArrowDown', run: view => moveCursorByLogicalLine(view, true),  preventDefault: true },
+]));
 
 // ─── List continuation (Prec.highest so it runs before markdownKeymap) ───────
 
@@ -378,6 +486,8 @@ const listContinuationKeymap = Prec.highest(keymap.of([{
 
 const BASE_EXTENSIONS: Extension[] = [
   noteTitleField,
+  goalColumnField,
+  logicalLineKeymap,
   listContinuationKeymap,
   history(),
   search({ top: false }),
