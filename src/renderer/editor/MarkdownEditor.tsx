@@ -96,6 +96,19 @@ const vimCompartment          = new Compartment();
 const livePreviewCompartment  = new Compartment();
 const autocompleteCompartment = new Compartment();
 const fontCompartment         = new Compartment();
+const cmKeymapCompartment     = new Compartment();
+
+// CM6 default keymaps include `Mod-d` (selectNextOccurrence) and `Mod-u`
+// (undoSelection), which collide with the standard Vim half-page-scroll
+// bindings. When Vim mode is active, drop these so the keystrokes reach the
+// Vim keymap instead.
+const VIM_CONFLICTING_KEYS = new Set(['Mod-d', 'Mod-u']);
+
+function buildCmKeymap(vimMode: boolean): Extension {
+  const all = [...defaultKeymap, ...historyKeymap, ...searchKeymap, indentWithTab];
+  const filtered = vimMode ? all.filter(b => !b.key || !VIM_CONFLICTING_KEYS.has(b.key)) : all;
+  return keymap.of(filtered);
+}
 
 // Font theme — reconfiguring via dispatch() makes CM6 remeasure line heights.
 // Setting fonts via CSS inheritance on an outer element does NOT trigger CM6's
@@ -497,7 +510,6 @@ const BASE_EXTENSIONS: Extension[] = [
   relativeLineNumbers,
   EditorView.lineWrapping,
   markdown({ base: markdownLanguage }),
-  keymap.of([...defaultKeymap, ...historyKeymap, ...searchKeymap, indentWithTab]),
   editorTheme,
 ];
 
@@ -634,6 +646,7 @@ const MarkdownEditor = forwardRef<MarkdownEditorHandle, MarkdownEditorProps>(fun
       extensions: [
         noteTitleFacet.of(noteName),
         ...BASE_EXTENSIONS,
+        cmKeymapCompartment.of(buildCmKeymap(vimMode)),
         saveKeymap,
         updateListener,
         vimCompartment.of(vimMode ? vim() : []),
@@ -654,6 +667,11 @@ const MarkdownEditor = forwardRef<MarkdownEditorHandle, MarkdownEditorProps>(fun
     viewRef.current = view;
     pathRef.current = doc.path;
     view.focus();
+    // Debug: expose the most recently focused view for the Playwright harness.
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    (window as any).__cm = view;
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    (window as any).__Vim = Vim;
 
     if (initialCursor) {
       const pos = Math.min(initialCursor, state.doc.length);
@@ -691,7 +709,10 @@ const MarkdownEditor = forwardRef<MarkdownEditorHandle, MarkdownEditorProps>(fun
   useEffect(() => {
     const view = viewRef.current;
     if (!view) return;
-    view.dispatch({ effects: vimCompartment.reconfigure(vimMode ? vim() : []) });
+    view.dispatch({ effects: [
+      vimCompartment.reconfigure(vimMode ? vim() : []),
+      cmKeymapCompartment.reconfigure(buildCmKeymap(vimMode)),
+    ] });
     if (vimMode) {
       registerAppVimCommands();
       applyVimBindings(vimKeybindings, vimLeader ?? '\\');
