@@ -74,6 +74,7 @@ const VIM_CMD_EVENT: Record<string, string> = {
   sidebar:  'obsidian:toggle-sidebar', si: 'obsidian:toggle-sidebar',
   outline:  'obsidian:toggle-outline', ou: 'obsidian:toggle-outline',
   jumpback: 'obsidian:jump-back',  ju: 'obsidian:jump-back',
+  zen: 'obsidian:zen-mode',
 };
 
 interface GlobalVimBinding {
@@ -172,6 +173,8 @@ export default function App() {
   const [terminalOpen, setTerminalOpen]         = useState(false);
   const [terminalMounted, setTerminalMounted]   = useState(false);
   const [terminalPosition, setTerminalPosition] = useState<'bottom' | 'right'>('right');
+  const [zenMode, setZenMode]                   = useState(false);
+  const [zenIndicatorVisible, setZenIndicatorVisible] = useState(false);
   const [splitEnabled, setSplitEnabled]         = useState(false);
   const [splitPath, setSplitPath]               = useState<string | null>(null);
   const [splitTabs, setSplitTabs]               = useState<NoteDocument[]>([]);
@@ -511,6 +514,13 @@ export default function App() {
     const onQuickOpen     = () => setQuickOpenOpen(true);
     const onToggleSidebar = () => setSidebarOpen(v => !v);
     const onToggleOutline = () => setOutlineOpen(v => !v);
+    const onZenMode = () => setZenMode(z => {
+      if (!z) {
+        setZenIndicatorVisible(true);
+        setTimeout(() => setZenIndicatorVisible(false), 2000);
+      }
+      return !z;
+    });
 
     const onKeyDown = (e: KeyboardEvent) => {
       const combo = keyEventToString(e);
@@ -602,6 +612,15 @@ export default function App() {
         case 'commandPalette':
           setCommandPaletteOpen(true);
           break;
+        case 'zenMode':
+          setZenMode(z => {
+            if (!z) {
+              setZenIndicatorVisible(true);
+              setTimeout(() => setZenIndicatorVisible(false), 2000);
+            }
+            return !z;
+          });
+          break;
       }
     };
 
@@ -631,6 +650,7 @@ export default function App() {
     window.addEventListener('obsidian:toggle-outline', onToggleOutline as EventListener);
     window.addEventListener('obsidian:vsplit',         onVsplit        as EventListener);
     window.addEventListener('obsidian:wincmd',         onWincmd        as EventListener);
+    window.addEventListener('obsidian:zen-mode',       onZenMode       as EventListener);
     window.addEventListener('keydown', onKeyDown, true);
 
     return () => {
@@ -643,6 +663,7 @@ export default function App() {
       window.removeEventListener('obsidian:toggle-outline', onToggleOutline as EventListener);
       window.removeEventListener('obsidian:vsplit',         onVsplit        as EventListener);
       window.removeEventListener('obsidian:wincmd',         onWincmd        as EventListener);
+      window.removeEventListener('obsidian:zen-mode',       onZenMode       as EventListener);
       window.removeEventListener('keydown', onKeyDown, true);
     };
   }, [switchTab, activePath, closeTab, jumpBack, settings.appKeybindings, snapshot, sidebarOpen, sidebarTab, openSplit, closeSplitPane, focusPane]);
@@ -977,6 +998,22 @@ export default function App() {
     setActiveDiff(null);
   }, [tabs]);
 
+  // ─── Escape exits zen mode (unless in Vim insert mode) ────────────────────
+  useEffect(() => {
+    if (!zenMode) return;
+    const handler = (e: KeyboardEvent) => {
+      if (e.key !== 'Escape') return;
+      // Don't exit zen mode if Vim is in insert mode — Escape should exit insert first
+      const vimState = (window as any).__cm?.cm?.state?.vim;
+      if (vimState?.insertMode) return;
+      // Don't exit when a modal/dialog is open
+      if (document.querySelector('.modal-backdrop') || document.querySelector('.quick-open')) return;
+      setZenMode(false);
+    };
+    window.addEventListener('keydown', handler);
+    return () => window.removeEventListener('keydown', handler);
+  }, [zenMode]);
+
   // ─── Vault select ─────────────────────────────────────────────────────────
   const selectVault = useCallback(async () => {
     const snap = await window.vaultApp.selectVault();
@@ -1038,7 +1075,7 @@ export default function App() {
 
   // ─── Render ───────────────────────────────────────────────────────────────
   return (
-    <div className="app-root">
+    <div className={`app-root${zenMode ? ' zen-mode' : ''}`}>
     <div className="app-titlebar">
       <span className="app-titlebar-drag" />
       <div className="titlebar-controls">
@@ -1658,6 +1695,13 @@ export default function App() {
         </div>
       )}
     </div>
+
+    {/* ── Zen mode indicator ───────────────────────────────────────────── */}
+    {zenMode && (
+      <div className={`zen-indicator${zenIndicatorVisible ? '' : ' fade-out'}`}>
+        Zen-Modus
+      </div>
+    )}
     </div>
   );
 }

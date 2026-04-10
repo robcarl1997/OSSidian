@@ -7,6 +7,7 @@ import simpleGit from 'simple-git';
 import * as pty from 'node-pty';
 import type {
   AppSettings,
+  AppKeybinding,
   VaultEntry,
   VaultSnapshot,
   NoteDocument,
@@ -764,7 +765,8 @@ function createWindow(): void {
   mainWindow.once('ready-to-show', () => mainWindow?.show());
 
   if (!app.isPackaged) {
-    mainWindow.loadURL('http://localhost:5173');
+    const devPort = process.env.VITE_DEV_PORT ?? '5173';
+    mainWindow.loadURL(`http://localhost:${devPort}`);
     mainWindow.webContents.openDevTools({ mode: 'detach' });
   } else {
     mainWindow.loadFile(path.join(__dirname, '../dist/renderer/index.html'));

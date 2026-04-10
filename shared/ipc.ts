@@ -28,7 +28,8 @@ export type AppAction =
   | 'paneShrink'
   | 'paneGrow'
   | 'paneReset'
-  | 'commandPalette';
+  | 'commandPalette'
+  | 'zenMode';
 
 export interface AppKeybinding {
   key: string;      // normalised combo, e.g. "Ctrl+P", "Ctrl+Shift+O"
@@ -88,6 +89,7 @@ export const DEFAULT_SETTINGS: AppSettings = {
     { key: 'Ctrl+Alt+ArrowRight', action: 'paneGrow'   },
     { key: 'Ctrl+Alt+0',          action: 'paneReset'  },
     { key: 'Ctrl+Shift+P',        action: 'commandPalette' },
+    { key: 'Ctrl+Shift+Z',        action: 'zenMode'    },
   ],
 };
 

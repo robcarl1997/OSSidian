@@ -261,6 +261,9 @@ function registerAppVimCommands(): void {
   Vim.defineEx('outline', 'ou', () => {
     window.dispatchEvent(new CustomEvent('obsidian:toggle-outline'));
   });
+  Vim.defineEx('zen', 'zen', () => {
+    window.dispatchEvent(new CustomEvent('obsidian:zen-mode'));
+  });
 
   // ── Split pane (VS Code style) ──
   Vim.defineEx('vsplit', 'vsp', (_cm: unknown, params: { args?: string[] }) => {

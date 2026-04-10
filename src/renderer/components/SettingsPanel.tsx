@@ -385,6 +385,7 @@ const ACTION_LABELS: Record<AppAction, string> = {
   paneGrow:        'Linke Pane vergrößern',
   paneReset:       'Pane-Verhältnis zurücksetzen (50/50)',
   commandPalette:  'Befehlspalette öffnen',
+  zenMode:         'Zen-Modus',
 };
 
 const VIM_COMMANDS: Partial<Record<AppAction, string>> = {
@@ -397,6 +398,7 @@ const VIM_COMMANDS: Partial<Record<AppAction, string>> = {
   tabPrev:       ':tabprev  :tabp  gT',
   tabClose:      ':tabclose  :tabc',
   jumpBack:      ':jumpback  :ju',
+  zenMode:       ':zen',
 };
 
 const ALL_ACTIONS = Object.keys(ACTION_LABELS) as AppAction[];
