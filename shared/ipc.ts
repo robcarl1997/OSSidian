@@ -50,6 +50,7 @@ export interface AppSettings {
   attachmentFolder: string;    // vault-relative folder for pasted images
   terminalPosition: 'bottom' | 'right';
   splitPaneRatio: number;      // 0.1 .. 0.9, fraction of width given to left pane
+  bookmarks: string[];         // vault-relative paths of bookmarked/favorited notes
 }
 
 export const DEFAULT_SETTINGS: AppSettings = {
@@ -67,6 +68,7 @@ export const DEFAULT_SETTINGS: AppSettings = {
   attachmentFolder: 'attachments',
   terminalPosition: 'right',
   splitPaneRatio: 0.5,
+  bookmarks: [],
   appKeybindings: [
     { key: 'Ctrl+P',         action: 'quickOpen'     },
     { key: 'Ctrl+B',         action: 'toggleSidebar' },
