@@ -35,7 +35,7 @@ import CommandPalette from './components/CommandPalette';
 import MarkdownEditor, { type MarkdownEditorHandle } from './editor/MarkdownEditor';
 import OutlinePanel from './components/OutlinePanel';
 import GitPanel from './components/GitPanel';
-import TerminalPanel from './components/TerminalPanel';
+import TerminalPanel, { type TerminalPanelHandle } from './components/TerminalPanel';
 import DiffViewer from './components/DiffViewer';
 import ImageViewer from './components/ImageViewer';
 import PdfViewer from './components/PdfViewer';
@@ -76,6 +76,10 @@ const VIM_CMD_EVENT: Record<string, string> = {
   jumpback: 'obsidian:jump-back',  ju: 'obsidian:jump-back',
   zen: 'obsidian:zen-mode',
   daily: 'obsidian:daily-note',
+  terminal: 'obsidian:toggle-terminal', term: 'obsidian:toggle-terminal',
+  termnew:  'obsidian:terminal-new',  termn: 'obsidian:terminal-new',
+  termnext: 'obsidian:terminal-next',
+  termprev: 'obsidian:terminal-prev',
 };
 
 interface GlobalVimBinding {
@@ -189,6 +193,7 @@ export default function App() {
   const pendingCursors     = useRef(new Map<string, number>());
   const editorRef          = useRef<MarkdownEditorHandle>(null);
   const splitEditorRef     = useRef<MarkdownEditorHandle>(null);
+  const terminalRef        = useRef<TerminalPanelHandle>(null);
   const activePaneIdxRef   = useRef<0 | 1>(0);
   const splitEnabledRef    = useRef(false);
   const splitPathRef       = useRef<string | null>(null);
@@ -633,6 +638,32 @@ export default function App() {
             }
           }).catch(err => console.error('[dailyNote]', err));
           break;
+        case 'terminalNew':
+          setTerminalOpen(true);
+          setTerminalMounted(true);
+          setTimeout(() => terminalRef.current?.newTerminal(), 50);
+          break;
+        case 'terminalNext':
+          terminalRef.current?.nextTerminal();
+          break;
+        case 'terminalPrev':
+          terminalRef.current?.prevTerminal();
+          break;
+        case 'terminalClose':
+          terminalRef.current?.closeTerminal();
+          break;
+        case 'terminalGrow': {
+          const step = terminalPosition === 'bottom' ? 40 : 60;
+          const max = terminalPosition === 'bottom' ? 800 : 1200;
+          setTerminalSize(s => Math.min(max, s + step));
+          break;
+        }
+        case 'terminalShrink': {
+          const step = terminalPosition === 'bottom' ? 40 : 60;
+          const min = terminalPosition === 'bottom' ? 80 : 200;
+          setTerminalSize(s => Math.max(min, s - step));
+          break;
+        }
       }
     };
 
@@ -665,6 +696,26 @@ export default function App() {
       }
     };
 
+    // Terminal Vim command events
+    const onToggleTerminal = () => {
+      setTerminalOpen(v => {
+        if (!v) {
+          setTerminalMounted(true);
+          setTimeout(() => window.vaultApp.writeContext(activePathRef.current, editorSelectionRef.current), 0);
+        } else {
+          setTimeout(() => editorRef.current?.focus(), 0);
+        }
+        return !v;
+      });
+    };
+    const onTerminalNew = () => {
+      setTerminalOpen(true);
+      setTerminalMounted(true);
+      setTimeout(() => terminalRef.current?.newTerminal(), 50);
+    };
+    const onTerminalNext = () => { terminalRef.current?.nextTerminal(); };
+    const onTerminalPrev = () => { terminalRef.current?.prevTerminal(); };
+
     window.addEventListener('obsidian:tab-next',       onTabNext       as EventListener);
     window.addEventListener('obsidian:tab-prev',       onTabPrev       as EventListener);
     window.addEventListener('obsidian:tab-close',      onTabClose      as EventListener);
@@ -676,6 +727,10 @@ export default function App() {
     window.addEventListener('obsidian:wincmd',         onWincmd        as EventListener);
     window.addEventListener('obsidian:zen-mode',       onZenMode       as EventListener);
     window.addEventListener('obsidian:daily-note',     onDailyNote     as EventListener);
+    window.addEventListener('obsidian:toggle-terminal', onToggleTerminal as EventListener);
+    window.addEventListener('obsidian:terminal-new',    onTerminalNew    as EventListener);
+    window.addEventListener('obsidian:terminal-next',   onTerminalNext   as EventListener);
+    window.addEventListener('obsidian:terminal-prev',   onTerminalPrev   as EventListener);
     window.addEventListener('keydown', onKeyDown, true);
 
     return () => {
@@ -690,9 +745,13 @@ export default function App() {
       window.removeEventListener('obsidian:wincmd',         onWincmd        as EventListener);
       window.removeEventListener('obsidian:zen-mode',       onZenMode       as EventListener);
       window.removeEventListener('obsidian:daily-note',     onDailyNote     as EventListener);
+      window.removeEventListener('obsidian:toggle-terminal', onToggleTerminal as EventListener);
+      window.removeEventListener('obsidian:terminal-new',    onTerminalNew    as EventListener);
+      window.removeEventListener('obsidian:terminal-next',   onTerminalNext   as EventListener);
+      window.removeEventListener('obsidian:terminal-prev',   onTerminalPrev   as EventListener);
       window.removeEventListener('keydown', onKeyDown, true);
     };
-  }, [switchTab, activePath, closeTab, jumpBack, settings.appKeybindings, snapshot, sidebarOpen, sidebarTab, openSplit, closeSplitPane, focusPane]);
+  }, [switchTab, activePath, closeTab, jumpBack, settings.appKeybindings, snapshot, sidebarOpen, sidebarTab, openSplit, closeSplitPane, focusPane, terminalPosition]);
 
   // ─── Global Vim key-sequence handler ──────────────────────────────────────
   //
@@ -1616,6 +1675,7 @@ export default function App() {
         {/* ── Terminal panel ──────────────────────────────────────────── */}
         {terminalMounted && (
           <TerminalPanel
+            ref={terminalRef}
             key="terminal"
             vaultPath={snapshot?.vaultPath ?? null}
             activeFile={activePath}

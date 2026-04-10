@@ -30,7 +30,13 @@ export type AppAction =
   | 'paneReset'
   | 'commandPalette'
   | 'zenMode'
-  | 'dailyNote';
+  | 'dailyNote'
+  | 'terminalNew'
+  | 'terminalNext'
+  | 'terminalPrev'
+  | 'terminalClose'
+  | 'terminalGrow'
+  | 'terminalShrink';
 
 export interface AppKeybinding {
   key: string;      // normalised combo, e.g. "Ctrl+P", "Ctrl+Shift+O"
@@ -94,6 +100,11 @@ export const DEFAULT_SETTINGS: AppSettings = {
     { key: 'Ctrl+Shift+P',        action: 'commandPalette' },
     { key: 'Ctrl+Shift+Z',        action: 'zenMode'    },
     { key: 'Ctrl+D',              action: 'dailyNote'  },
+    { key: 'Ctrl+Shift+`',          action: 'terminalNew'    },
+    { key: 'Ctrl+Shift+PageDown',   action: 'terminalNext'   },
+    { key: 'Ctrl+Shift+PageUp',     action: 'terminalPrev'   },
+    { key: 'Ctrl+Shift+ArrowUp',    action: 'terminalGrow'   },
+    { key: 'Ctrl+Shift+ArrowDown',  action: 'terminalShrink' },
   ],
 };
 

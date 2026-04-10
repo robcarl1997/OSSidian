@@ -401,6 +401,12 @@ const ACTION_LABELS: Record<AppAction, string> = {
   commandPalette:  'Befehlspalette öffnen',
   zenMode:         'Zen-Modus',
   dailyNote:       'Tägliche Notiz öffnen/erstellen',
+  terminalNew:     'Neues Terminal erstellen',
+  terminalNext:    'Nächstes Terminal',
+  terminalPrev:    'Vorheriges Terminal',
+  terminalClose:   'Aktuelles Terminal schließen',
+  terminalGrow:    'Terminal vergrößern',
+  terminalShrink:  'Terminal verkleinern',
 };
 
 const VIM_COMMANDS: Partial<Record<AppAction, string>> = {
@@ -415,6 +421,10 @@ const VIM_COMMANDS: Partial<Record<AppAction, string>> = {
   jumpBack:      ':jumpback  :ju',
   zenMode:       ':zen',
   dailyNote:     ':daily',
+  toggleTerminal: ':terminal  :term',
+  terminalNew:   ':termnew  :termn',
+  terminalNext:  ':termnext',
+  terminalPrev:  ':termprev',
 };
 
 const ALL_ACTIONS = Object.keys(ACTION_LABELS) as AppAction[];
