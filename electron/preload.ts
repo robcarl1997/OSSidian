@@ -60,6 +60,10 @@ const api: VaultApi = {
     ipcRenderer.invoke('export:html', notePath, html),
   exportPdf:      (notePath: string, html: string) =>
     ipcRenderer.invoke('export:pdf', notePath, html),
+  getAllTags:      () =>
+    ipcRenderer.invoke('tags:getAll'),
+  searchByTag:    (tag: string) =>
+    ipcRenderer.invoke('tags:search', tag),
 };
 
 contextBridge.exposeInMainWorld('vaultApp', api);

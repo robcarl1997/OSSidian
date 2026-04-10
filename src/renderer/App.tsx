@@ -38,6 +38,7 @@ import DiffViewer from './components/DiffViewer';
 import ImageViewer from './components/ImageViewer';
 import PdfViewer from './components/PdfViewer';
 import BacklinksPanel from './components/BacklinksPanel';
+import TagPanel from './components/TagPanel';
 import { marked } from 'marked';
 
 const IMAGE_EXTS = new Set(['png','jpg','jpeg','gif','webp','svg','bmp','ico','avif']);
@@ -154,7 +155,8 @@ export default function App() {
   const [navHistory, setNavHistory]     = useState<{ path: string; cursor: number }[]>([]);
   const [quickOpenOpen, setQuickOpenOpen] = useState(false);
   const [sidebarOpen, setSidebarOpen]   = useState(true);
-  const [sidebarTab, setSidebarTab]     = useState<'files' | 'git' | 'backlinks'>('files');
+  const [sidebarTab, setSidebarTab]     = useState<'files' | 'git' | 'backlinks' | 'tags'>('files');
+  const [tagRefreshKey, setTagRefreshKey] = useState(0);
   const [outlineOpen, setOutlineOpen]   = useState(false);
   const [headContent, setHeadContent] = useState<string | null | undefined>(undefined);
   const [activeDiff, setActiveDiff]   = useState<{ path: string; head: string | null; current: string; readOnly?: boolean; aLabel?: string } | null>(null);
@@ -226,6 +228,7 @@ export default function App() {
   useEffect(() => {
     return window.vaultApp.onVaultChanged(event => {
       setSnapshot(event.snapshot);
+      setTagRefreshKey(k => k + 1);
 
       // Reload open tab when file changes externally (unless user has unsaved edits)
       if (event.kind === 'changed' && event.path) {
@@ -996,6 +999,18 @@ export default function App() {
               <polyline points="8 5 11 8 8 11"/>
             </svg>
           </button>
+          <button
+            className={`activity-btn${sidebarTab === 'tags' && sidebarOpen ? ' active' : ''}`}
+            title="Tags"
+            onClick={() => sidebarTab === 'tags' ? setSidebarOpen(v => !v) : (setSidebarTab('tags'), setSidebarOpen(true))}
+          >
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+              <line x1="4" y1="9" x2="20" y2="9"/>
+              <line x1="4" y1="15" x2="20" y2="15"/>
+              <line x1="10" y1="3" x2="8" y2="21"/>
+              <line x1="16" y1="3" x2="14" y2="21"/>
+            </svg>
+          </button>
         </div>
         <div className="activity-bar-bottom">
           <button className="activity-btn" title="Einstellungen" onClick={() => setSettingsOpen(true)}>
@@ -1020,6 +1035,7 @@ export default function App() {
             {sidebarTab === 'files'
               ? (snapshot?.vaultPath?.replace(/\\/g, '/').split('/').pop() ?? 'Kein Vault')
               : sidebarTab === 'git' ? 'Git'
+              : sidebarTab === 'tags' ? 'Tags'
               : 'Rückverknüpfungen'}
           </span>
           {sidebarTab === 'files' && (
@@ -1101,6 +1117,11 @@ export default function App() {
               if (activePath) window.vaultApp.gitFileAtHead(activePath).then(setHeadContent);
             }}
             onRestoreComplete={handleRestoreComplete}
+          />
+        ) : sidebarTab === 'tags' ? (
+          <TagPanel
+            onOpenNote={openNote}
+            refreshTrigger={tagRefreshKey}
           />
         ) : (
           <BacklinksPanel

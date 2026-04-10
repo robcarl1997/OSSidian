@@ -135,6 +135,14 @@ export interface BacklinkResult {
   line: number;
 }
 
+// ─── Tags ───────────────────────────────────────────────────────────────────
+
+export interface TagInfo {
+  tag: string;
+  count: number;
+  files: string[];
+}
+
 // ─── Events ──────────────────────────────────────────────────────────────────
 
 export interface VaultChangeEvent {
@@ -202,6 +210,9 @@ export interface VaultApi {
   getBacklinks(targetPath: string): Promise<BacklinkResult[]>;
   exportHtml(notePath: string, html: string): Promise<void>;
   exportPdf(notePath: string, html: string): Promise<void>;
+  // ── Tags ──────────────────────────────────────────────────────────────────
+  getAllTags(): Promise<TagInfo[]>;
+  searchByTag(tag: string): Promise<SearchResult[]>;
 }
 
 export interface WindowControls {
