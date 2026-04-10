@@ -53,6 +53,80 @@ function attachmentKind(path: string): 'image' | 'pdf' | 'audio' | 'video' | nul
   return null;
 }
 
+// ─── Global Vim key-sequence support ─────────────────────────────────────────
+//
+// Parses normal-mode vimKeybindings whose RHS is a known app command and makes
+// them work even when no CodeMirror editor is focused (image/PDF tabs, etc.).
+
+/** Vim ex-command name → custom event dispatched on window */
+const VIM_CMD_EVENT: Record<string, string> = {
+  tabclose: 'obsidian:tab-close', tabc: 'obsidian:tab-close',
+  tabnext:  'obsidian:tab-next',  tabn: 'obsidian:tab-next',
+  tabprev:  'obsidian:tab-prev',  tabp: 'obsidian:tab-prev',
+  quickopen: 'obsidian:quick-open', qu: 'obsidian:quick-open',
+  sidebar:  'obsidian:toggle-sidebar', si: 'obsidian:toggle-sidebar',
+  outline:  'obsidian:toggle-outline', ou: 'obsidian:toggle-outline',
+  jumpback: 'obsidian:jump-back',  ju: 'obsidian:jump-back',
+};
+
+interface GlobalVimBinding {
+  keys: string[];
+  event: string;
+  detail?: Record<string, unknown>;
+}
+
+/** Parse Vim key notation (e.g. "<Space>q", "<C-l>") into key tokens */
+function parseVimLhs(lhs: string, leader: string): string[] {
+  const tokens: string[] = [];
+  let i = 0;
+  while (i < lhs.length) {
+    if (lhs[i] === '<') {
+      const end = lhs.indexOf('>', i);
+      if (end === -1) { tokens.push(lhs[i]); i++; continue; }
+      const tag = lhs.slice(i + 1, end);
+      i = end + 1;
+      const lo = tag.toLowerCase();
+      if (lo === 'space')                    tokens.push(' ');
+      else if (lo === 'leader')              tokens.push(leader);
+      else if (lo === 'cr' || lo === 'enter') tokens.push('Enter');
+      else if (lo === 'bs')                  tokens.push('Backspace');
+      else if (lo === 'esc')                 tokens.push('Escape');
+      else if (lo === 'tab')                 tokens.push('Tab');
+      else if (lo.startsWith('c-'))          tokens.push('C-' + tag.slice(2));
+      else if (lo.startsWith('s-'))          tokens.push('S-' + tag.slice(2));
+      else if (lo.startsWith('a-') || lo.startsWith('m-'))
+                                             tokens.push('A-' + tag.slice(2));
+      else                                   tokens.push(tag);
+    } else {
+      tokens.push(lhs[i]);
+      i++;
+    }
+  }
+  return tokens;
+}
+
+/** Extract event info from a Vim RHS like ":tabclose<CR>" */
+function parseVimRhs(rhs: string): { event: string; detail?: Record<string, unknown> } | null {
+  const m = rhs.match(/:(\w+)(?:\s+(\S+))?<CR>/i);
+  if (!m) return null;
+  const cmd = m[1].toLowerCase();
+  const arg = m[2];
+  if (cmd === 'wincmd' || cmd === 'winc')
+    return arg ? { event: 'obsidian:wincmd', detail: { cmd: arg } } : null;
+  if (['vsplit', 'vsp', 'split', 'sp'].includes(cmd))
+    return { event: 'obsidian:vsplit', detail: { filePath: null } };
+  const ev = VIM_CMD_EVENT[cmd];
+  return ev ? { event: ev } : null;
+}
+
+/** Convert a KeyboardEvent to a Vim-style token for sequence matching */
+function keyToVimToken(e: KeyboardEvent): string | null {
+  if (['Control', 'Shift', 'Alt', 'Meta'].includes(e.key)) return null;
+  if (e.ctrlKey || e.metaKey) return 'C-' + e.key;
+  if (e.altKey) return 'A-' + e.key;
+  return e.key;
+}
+
 // ─── Types ────────────────────────────────────────────────────────────────────
 
 interface Dialog {
@@ -560,6 +634,106 @@ export default function App() {
       window.removeEventListener('keydown', onKeyDown, true);
     };
   }, [switchTab, activePath, closeTab, jumpBack, settings.appKeybindings, snapshot, sidebarOpen, sidebarTab, openSplit, closeSplitPane, focusPane]);
+
+  // ─── Global Vim key-sequence handler ──────────────────────────────────────
+  //
+  // When Vim mode is on and no editor/input is focused (e.g. image tab), this
+  // handler interprets multi-key sequences from the user's normal-mode Vim
+  // keybindings and dispatches the corresponding app events.
+  useEffect(() => {
+    if (!settings.vimMode) return;
+
+    const leader = settings.vimLeader ?? '\\';
+
+    // Build binding table from normal-mode vim keybindings
+    const bindings: GlobalVimBinding[] = [];
+    for (const kb of settings.vimKeybindings) {
+      if (kb.mode !== 'normal') continue;
+      const parsed = parseVimRhs(kb.rhs);
+      if (!parsed) continue;
+      const keys = parseVimLhs(kb.lhs, leader);
+      if (keys.length === 0) continue;
+      bindings.push({ keys, ...parsed });
+    }
+    if (bindings.length === 0) return;
+
+    let buffer: string[] = [];
+    let timer: ReturnType<typeof setTimeout> | null = null;
+
+    const reset = () => {
+      buffer = [];
+      if (timer) { clearTimeout(timer); timer = null; }
+    };
+
+    const handler = (e: KeyboardEvent) => {
+      // Skip if already handled by appKeybindings
+      if (e.defaultPrevented) return;
+
+      // Skip when typing in text inputs, editor, or terminal
+      const el = document.activeElement;
+      if (el && (
+        el.tagName === 'INPUT' || el.tagName === 'TEXTAREA' ||
+        el.classList.contains('cm-content') ||
+        (el as HTMLElement).isContentEditable
+      )) return;
+
+      // Skip when a modal/dialog is open
+      if (document.querySelector('.modal-backdrop') ||
+          document.querySelector('.quick-open')) return;
+
+      const token = keyToVimToken(e);
+      if (!token) return;
+
+      buffer.push(token);
+      if (timer) clearTimeout(timer);
+      timer = setTimeout(reset, 1500);
+
+      // Check for exact match or prefix match
+      let hasPrefix = false;
+      let exactMatch: GlobalVimBinding | null = null;
+
+      for (const b of bindings) {
+        if (b.keys.length < buffer.length) continue;
+        if (!buffer.every((k, i) => k === b.keys[i])) continue;
+        if (b.keys.length === buffer.length) { exactMatch = b; break; }
+        hasPrefix = true;
+      }
+
+      if (exactMatch) {
+        e.preventDefault();
+        e.stopPropagation();
+        window.dispatchEvent(new CustomEvent(exactMatch.event, { detail: exactMatch.detail }));
+        reset();
+      } else if (!hasPrefix) {
+        // Buffer doesn't match any prefix — retry with just the last key
+        const lastToken = buffer[buffer.length - 1];
+        reset();
+        buffer = [lastToken];
+        for (const b of bindings) {
+          if (b.keys.length === 1 && b.keys[0] === lastToken) {
+            e.preventDefault();
+            e.stopPropagation();
+            window.dispatchEvent(new CustomEvent(b.event, { detail: b.detail }));
+            reset();
+            return;
+          }
+        }
+        // Check if single key is prefix of a longer sequence
+        if (!bindings.some(b => b.keys.length > 1 && b.keys[0] === lastToken)) {
+          reset();
+        } else {
+          timer = setTimeout(reset, 1500);
+        }
+      }
+      // else: partial match — keep waiting
+    };
+
+    window.addEventListener('keydown', handler, true);
+    return () => {
+      window.removeEventListener('keydown', handler, true);
+      if (timer) clearTimeout(timer);
+    };
+  }, [settings.vimMode, settings.vimKeybindings, settings.vimLeader]);
 
   // ─── Mark tab dirty (in BOTH panes if same path is open) ─────────────────
   const markDirty = useCallback((path: string, raw: string) => {
