@@ -1518,6 +1518,31 @@ body {
   font-weight: 600;
 }
 
+/* ── Editable table editor ───────────────────────────────────────────────── */
+.cm-table-editor { position: relative; margin: 8px 0; }
+.cm-table-toolbar {
+  display: flex; gap: 4px; padding: 4px 0;
+  opacity: 0; transition: opacity 0.15s;
+}
+.cm-table-editor:hover .cm-table-toolbar,
+.cm-table-editor:focus-within .cm-table-toolbar { opacity: 1; }
+.cm-table-toolbar button {
+  font-size: 11px; padding: 2px 8px;
+  border: 1px solid var(--border); border-radius: 4px;
+  background: var(--bg-surface); color: var(--text-muted);
+  cursor: pointer; font-family: inherit;
+}
+.cm-table-toolbar button:hover { background: var(--bg-hover); color: var(--text-primary); }
+.cm-md-table-editable td span[contenteditable],
+.cm-md-table-editable th span[contenteditable] {
+  display: block; min-width: 30px; outline: none; padding: 1px;
+}
+.cm-md-table-editable td span[contenteditable]:focus,
+.cm-md-table-editable th span[contenteditable]:focus {
+  background: var(--bg-input); border-radius: 2px;
+  box-shadow: 0 0 0 1px var(--accent);
+}
+
 /* ── Sidebar hidden ───────────────────────────────────────────────────────── */
 .app.sidebar-hidden .sidebar { display: none; }
 .app.sidebar-hidden .activity-bar { border-right: none; }

@@ -180,10 +180,15 @@ function buildBlockDecorations(state: EditorState): DecorationSet {
             if (!cells.every(c => /^[-: ]+$/.test(c))) rows.push(cells);
           }
           if (rows.length >= 1) {
+            const tFrom = line.from;
+            const tTo   = state.doc.line(tableEndNo).to;
             items.push({
-              from:  line.from,
-              to:    state.doc.line(tableEndNo).to,
-              value: Decoration.replace({ widget: new TableWidget(rows), block: true }),
+              from:  tFrom,
+              to:    tTo,
+              value: Decoration.replace({
+                widget: new EditableTableWidget(rows, tFrom, tTo),
+                block: true,
+              }),
             });
             pos = state.doc.line(tableEndNo).to + 1;
             continue;
@@ -219,22 +224,263 @@ export const livePreviewBlockField = StateField.define<DecorationSet>({
 
 // ─── Widgets ──────────────────────────────────────────────────────────────────
 
-class TableWidget extends WidgetType {
-  constructor(readonly rows: string[][]) { super(); }
-  eq(other: TableWidget) { return JSON.stringify(this.rows) === JSON.stringify(other.rows); }
+// ─── Table helpers ───────────────────────────────────────────────────────────
+
+function buildMarkdownTable(rows: string[][]): string {
+  if (rows.length === 0) return '';
+  const header = rows[0];
+  const colWidths = header.map((_, i) =>
+    Math.max(3, ...rows.map(r => (r[i] ?? '').length))
+  );
+
+  const headerLine = '| ' + header.map((h, i) => h.padEnd(colWidths[i])).join(' | ') + ' |';
+  const sepLine    = '| ' + colWidths.map(w => '-'.repeat(w)).join(' | ') + ' |';
+  const bodyLines  = rows.slice(1).map(row =>
+    '| ' + row.map((c, i) => (c ?? '').padEnd(colWidths[i])).join(' | ') + ' |'
+  );
+
+  return [headerLine, sepLine, ...bodyLines].join('\n');
+}
+
+/** Find the current markdown table extent starting from a DOM element inside the widget. */
+function findTableRange(view: EditorView, dom: HTMLElement): { from: number; to: number } | null {
+  let pos: number;
+  try {
+    pos = view.posAtDOM(dom);
+  } catch {
+    return null;
+  }
+  const doc = view.state.doc;
+  const startLine = doc.lineAt(pos);
+  // Walk backwards to find the first table line
+  let fromLine = startLine.number;
+  while (fromLine > 1) {
+    const prev = doc.line(fromLine - 1);
+    if (!/^\|.*\|/.test(prev.text)) break;
+    fromLine--;
+  }
+  // Walk forwards to find the last table line
+  let toLine = startLine.number;
+  while (toLine < doc.lines) {
+    const next = doc.line(toLine + 1);
+    if (!/^\|.*\|/.test(next.text)) break;
+    toLine++;
+  }
+  return { from: doc.line(fromLine).from, to: doc.line(toLine).to };
+}
+
+class EditableTableWidget extends WidgetType {
+  constructor(
+    readonly rows: string[][],
+    readonly tableFrom: number,
+    readonly tableTo: number,
+  ) { super(); }
+
+  eq(other: EditableTableWidget) {
+    return JSON.stringify(this.rows) === JSON.stringify(other.rows);
+  }
+
   ignoreEvent() { return false; }
-  toDOM(): HTMLElement {
-    const table = document.createElement('table');
-    table.className = 'cm-md-table';
-    this.rows.forEach((cells, i) => {
-      const tr = table.insertRow();
-      cells.forEach(cell => {
-        const el = document.createElement(i === 0 ? 'th' : 'td');
-        el.textContent = cell;
-        tr.appendChild(el);
+
+  toDOM(view: EditorView): HTMLElement {
+    // Deep-clone rows so edits are local until write-back
+    let rows = this.rows.map(r => [...r]);
+
+    const wrapper = document.createElement('div');
+    wrapper.className = 'cm-table-editor';
+
+    // ── Toolbar ──
+    const toolbar = document.createElement('div');
+    toolbar.className = 'cm-table-toolbar';
+
+    const mkBtn = (label: string, title: string, handler: () => void) => {
+      const btn = document.createElement('button');
+      btn.textContent = label;
+      btn.title = title;
+      btn.addEventListener('mousedown', e => { e.preventDefault(); e.stopPropagation(); });
+      btn.addEventListener('click', e => {
+        e.preventDefault();
+        e.stopPropagation();
+        handler();
       });
+      return btn;
+    };
+
+    toolbar.appendChild(mkBtn('+ Zeile', 'Zeile hinzufügen', () => {
+      const cols = rows[0]?.length ?? 1;
+      rows.push(new Array(cols).fill(''));
+      rebuildTable();
+      writeBack();
+      // Focus first cell of new row
+      const allCells = table.querySelectorAll<HTMLElement>('td span[contenteditable], th span[contenteditable]');
+      const target = allCells[allCells.length - cols];
+      target?.focus();
+    }));
+    toolbar.appendChild(mkBtn('+ Spalte', 'Spalte hinzufügen', () => {
+      rows.forEach(r => r.push(''));
+      rebuildTable();
+      writeBack();
+    }));
+    toolbar.appendChild(mkBtn('\u2212 Zeile', 'Zeile entfernen', () => {
+      if (rows.length <= 1) return; // keep at least header
+      rows.pop();
+      rebuildTable();
+      writeBack();
+    }));
+    toolbar.appendChild(mkBtn('\u2212 Spalte', 'Spalte entfernen', () => {
+      if ((rows[0]?.length ?? 0) <= 1) return; // keep at least 1 column
+      rows.forEach(r => r.pop());
+      rebuildTable();
+      writeBack();
+    }));
+
+    wrapper.appendChild(toolbar);
+
+    // ── Table ──
+    const table = document.createElement('table');
+    table.className = 'cm-md-table cm-md-table-editable';
+    wrapper.appendChild(table);
+
+    // Build / rebuild the <table> contents
+    const rebuildTable = () => {
+      table.innerHTML = '';
+      rows.forEach((cells, rowIdx) => {
+        const tr = table.insertRow();
+        cells.forEach((cell, colIdx) => {
+          const el = document.createElement(rowIdx === 0 ? 'th' : 'td');
+          const span = document.createElement('span');
+          span.contentEditable = 'true';
+          span.textContent = cell;
+
+          // ── Blur: commit cell value ──
+          span.addEventListener('blur', () => {
+            const newVal = span.textContent ?? '';
+            if (rows[rowIdx][colIdx] !== newVal) {
+              rows[rowIdx][colIdx] = newVal;
+              writeBack();
+            }
+          });
+
+          // ── Keydown: navigation ──
+          span.addEventListener('keydown', (e: KeyboardEvent) => {
+            if (e.key === 'Escape') {
+              // Cancel edit: restore original text and blur
+              span.textContent = rows[rowIdx][colIdx];
+              span.blur();
+              e.preventDefault();
+              e.stopPropagation();
+              return;
+            }
+
+            if (e.key === 'Enter' && !e.shiftKey) {
+              e.preventDefault();
+              e.stopPropagation();
+              // Commit current cell
+              rows[rowIdx][colIdx] = span.textContent ?? '';
+              writeBack();
+              // Move to same column, next row
+              const nextRowIdx = rowIdx + 1;
+              if (nextRowIdx < rows.length) {
+                focusCell(nextRowIdx, colIdx);
+              } else {
+                // Create new row and move there
+                const cols = rows[0]?.length ?? 1;
+                rows.push(new Array(cols).fill(''));
+                rebuildTable();
+                writeBack();
+                focusCell(rows.length - 1, colIdx);
+              }
+              return;
+            }
+
+            if (e.key === 'Tab') {
+              e.preventDefault();
+              e.stopPropagation();
+              // Commit current cell
+              rows[rowIdx][colIdx] = span.textContent ?? '';
+              writeBack();
+
+              if (e.shiftKey) {
+                // Previous cell
+                let nc = colIdx - 1;
+                let nr = rowIdx;
+                if (nc < 0) {
+                  nr--;
+                  nc = (rows[0]?.length ?? 1) - 1;
+                }
+                if (nr >= 0) focusCell(nr, nc);
+              } else {
+                // Next cell
+                let nc = colIdx + 1;
+                let nr = rowIdx;
+                const cols = rows[0]?.length ?? 1;
+                if (nc >= cols) {
+                  nr++;
+                  nc = 0;
+                }
+                if (nr >= rows.length) {
+                  // Tab at last cell: add new row
+                  rows.push(new Array(cols).fill(''));
+                  rebuildTable();
+                  writeBack();
+                  focusCell(rows.length - 1, 0);
+                } else {
+                  focusCell(nr, nc);
+                }
+              }
+              return;
+            }
+          });
+
+          el.appendChild(span);
+          tr.appendChild(el);
+        });
+      });
+    };
+
+    /** Focus the contenteditable span at the given row/col. */
+    const focusCell = (rowIdx: number, colIdx: number) => {
+      const allRows = table.querySelectorAll('tr');
+      const tr = allRows[rowIdx];
+      if (!tr) return;
+      const cells = tr.querySelectorAll<HTMLElement>('th span[contenteditable], td span[contenteditable]');
+      const target = cells[colIdx];
+      if (target) {
+        target.focus();
+        // Select all text in the cell for easy replacement
+        const range = document.createRange();
+        range.selectNodeContents(target);
+        const sel = window.getSelection();
+        sel?.removeAllRanges();
+        sel?.addRange(range);
+      }
+    };
+
+    /** Write the current rows back to the CodeMirror document. */
+    const writeBack = () => {
+      const newMd = buildMarkdownTable(rows);
+      // Re-calculate range from DOM position to handle upstream edits
+      const range = findTableRange(view, wrapper);
+      if (range) {
+        view.dispatch({
+          changes: { from: range.from, to: range.to, insert: newMd },
+        });
+      }
+    };
+
+    // Initial build
+    rebuildTable();
+
+    // Prevent clicks inside the widget from moving the CodeMirror cursor
+    wrapper.addEventListener('mousedown', (e) => {
+      // Only prevent default if clicking on something that isn't a contenteditable span
+      const target = e.target as HTMLElement;
+      if (target.tagName === 'BUTTON' || target.isContentEditable) {
+        e.stopPropagation();
+      }
     });
-    return table;
+
+    return wrapper;
   }
 }
 
