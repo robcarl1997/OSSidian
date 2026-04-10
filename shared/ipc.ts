@@ -202,6 +202,7 @@ export interface VaultApi {
   getBacklinks(targetPath: string): Promise<BacklinkResult[]>;
   exportHtml(notePath: string, html: string): Promise<void>;
   exportPdf(notePath: string, html: string): Promise<void>;
+  readNoteContent(path: string): Promise<string | null>;
 }
 
 export interface WindowControls {

@@ -60,6 +60,8 @@ const api: VaultApi = {
     ipcRenderer.invoke('export:html', notePath, html),
   exportPdf:      (notePath: string, html: string) =>
     ipcRenderer.invoke('export:pdf', notePath, html),
+  readNoteContent: (path: string) =>
+    ipcRenderer.invoke('note:readContent', path),
 };
 
 contextBridge.exposeInMainWorld('vaultApp', api);
