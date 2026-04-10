@@ -29,7 +29,8 @@ export type AppAction =
   | 'paneGrow'
   | 'paneReset'
   | 'commandPalette'
-  | 'zenMode';
+  | 'zenMode'
+  | 'dailyNote';
 
 export interface AppKeybinding {
   key: string;      // normalised combo, e.g. "Ctrl+P", "Ctrl+Shift+O"
@@ -50,6 +51,7 @@ export interface AppSettings {
   vimLeader: string;
   appKeybindings: AppKeybinding[];
   attachmentFolder: string;    // vault-relative folder for pasted images
+  dailyNotesFolder: string;   // vault-relative folder for daily notes
   terminalPosition: 'bottom' | 'right';
   splitPaneRatio: number;      // 0.1 .. 0.9, fraction of width given to left pane
   bookmarks: string[];         // vault-relative paths of bookmarked/favorited notes
@@ -68,6 +70,7 @@ export const DEFAULT_SETTINGS: AppSettings = {
   vimKeybindings: [],
   vimLeader: '\\',
   attachmentFolder: 'attachments',
+  dailyNotesFolder: 'Tägliche Notizen',
   terminalPosition: 'right',
   splitPaneRatio: 0.5,
   bookmarks: [],
@@ -90,6 +93,7 @@ export const DEFAULT_SETTINGS: AppSettings = {
     { key: 'Ctrl+Alt+0',          action: 'paneReset'  },
     { key: 'Ctrl+Shift+P',        action: 'commandPalette' },
     { key: 'Ctrl+Shift+Z',        action: 'zenMode'    },
+    { key: 'Ctrl+D',              action: 'dailyNote'  },
   ],
 };
 
@@ -217,6 +221,7 @@ export interface VaultApi {
   queryFrontmatter(): Promise<FrontmatterEntry[]>;
   exportHtml(notePath: string, html: string): Promise<void>;
   exportPdf(notePath: string, html: string): Promise<void>;
+  openOrCreateDailyNote(): Promise<NoteDocument>;
 }
 
 export interface WindowControls {

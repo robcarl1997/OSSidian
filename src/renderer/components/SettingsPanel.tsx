@@ -272,6 +272,7 @@ function MarkdownTab({
   const linkFormat      = local.linkFormat      ?? 'wikilink';
   const autoUpdateLinks = local.autoUpdateLinks ?? true;
   const attachmentFolder = local.attachmentFolder ?? 'attachments';
+  const dailyNotesFolder = local.dailyNotesFolder ?? 'Tägliche Notizen';
 
   return (
     <div className="settings-body">
@@ -349,6 +350,19 @@ function MarkdownTab({
         </div>
 
         <div className="settings-row">
+          <div className="settings-label">
+            Ordner für tägliche Notizen
+            <small>Ordner relativ zum Vault-Root für tägliche Notizen (Ctrl+D)</small>
+          </div>
+          <input
+            className="settings-text-input"
+            value={dailyNotesFolder}
+            placeholder="Tägliche Notizen"
+            onChange={e => setLocal(l => ({ ...l, dailyNotesFolder: e.target.value }))}
+          />
+        </div>
+
+        <div className="settings-row">
           <div className="settings-label">Terminal-Position</div>
           <select
             className="settings-select"
@@ -386,6 +400,7 @@ const ACTION_LABELS: Record<AppAction, string> = {
   paneReset:       'Pane-Verhältnis zurücksetzen (50/50)',
   commandPalette:  'Befehlspalette öffnen',
   zenMode:         'Zen-Modus',
+  dailyNote:       'Tägliche Notiz öffnen/erstellen',
 };
 
 const VIM_COMMANDS: Partial<Record<AppAction, string>> = {
@@ -399,6 +414,7 @@ const VIM_COMMANDS: Partial<Record<AppAction, string>> = {
   tabClose:      ':tabclose  :tabc',
   jumpBack:      ':jumpback  :ju',
   zenMode:       ':zen',
+  dailyNote:     ':daily',
 };
 
 const ALL_ACTIONS = Object.keys(ACTION_LABELS) as AppAction[];

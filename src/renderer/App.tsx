@@ -75,6 +75,7 @@ const VIM_CMD_EVENT: Record<string, string> = {
   outline:  'obsidian:toggle-outline', ou: 'obsidian:toggle-outline',
   jumpback: 'obsidian:jump-back',  ju: 'obsidian:jump-back',
   zen: 'obsidian:zen-mode',
+  daily: 'obsidian:daily-note',
 };
 
 interface GlobalVimBinding {
@@ -621,7 +622,30 @@ export default function App() {
             return !z;
           });
           break;
+        case 'dailyNote':
+          window.vaultApp.openOrCreateDailyNote().then(doc => {
+            const existing = tabs.find(t => t.path === doc.path);
+            if (existing) {
+              setActivePath(doc.path);
+            } else {
+              setTabs(prev => [...prev, doc]);
+              setActivePath(doc.path);
+            }
+          }).catch(err => console.error('[dailyNote]', err));
+          break;
       }
+    };
+
+    const onDailyNote = () => {
+      window.vaultApp.openOrCreateDailyNote().then(doc => {
+        const existing = tabs.find(t => t.path === doc.path);
+        if (existing) {
+          setActivePath(doc.path);
+        } else {
+          setTabs(prev => [...prev, doc]);
+          setActivePath(doc.path);
+        }
+      }).catch(err => console.error('[dailyNote]', err));
     };
 
     const onVsplit = (e: CustomEvent<{ filePath: string | null }>) => {
@@ -651,6 +675,7 @@ export default function App() {
     window.addEventListener('obsidian:vsplit',         onVsplit        as EventListener);
     window.addEventListener('obsidian:wincmd',         onWincmd        as EventListener);
     window.addEventListener('obsidian:zen-mode',       onZenMode       as EventListener);
+    window.addEventListener('obsidian:daily-note',     onDailyNote     as EventListener);
     window.addEventListener('keydown', onKeyDown, true);
 
     return () => {
@@ -664,6 +689,7 @@ export default function App() {
       window.removeEventListener('obsidian:vsplit',         onVsplit        as EventListener);
       window.removeEventListener('obsidian:wincmd',         onWincmd        as EventListener);
       window.removeEventListener('obsidian:zen-mode',       onZenMode       as EventListener);
+      window.removeEventListener('obsidian:daily-note',     onDailyNote     as EventListener);
       window.removeEventListener('keydown', onKeyDown, true);
     };
   }, [switchTab, activePath, closeTab, jumpBack, settings.appKeybindings, snapshot, sidebarOpen, sidebarTab, openSplit, closeSplitPane, focusPane]);

@@ -264,6 +264,9 @@ function registerAppVimCommands(): void {
   Vim.defineEx('zen', 'zen', () => {
     window.dispatchEvent(new CustomEvent('obsidian:zen-mode'));
   });
+  Vim.defineEx('daily', 'daily', () => {
+    window.dispatchEvent(new CustomEvent('obsidian:daily-note'));
+  });
 
   // ── Split pane (VS Code style) ──
   Vim.defineEx('vsplit', 'vsp', (_cm: unknown, params: { args?: string[] }) => {
