@@ -41,6 +41,17 @@ import BacklinksPanel from './components/BacklinksPanel';
 import { marked } from 'marked';
 
 const IMAGE_EXTS = new Set(['png','jpg','jpeg','gif','webp','svg','bmp','ico','avif']);
+const AUDIO_EXTS = new Set(['mp3','wav','ogg','flac','m4a','aac','wma']);
+const VIDEO_EXTS = new Set(['mp4','webm','mov','avi','mkv','wmv']);
+
+function attachmentKind(path: string): 'image' | 'pdf' | 'audio' | 'video' | null {
+  const ext = path.split('.').pop()?.toLowerCase() ?? '';
+  if (IMAGE_EXTS.has(ext)) return 'image';
+  if (ext === 'pdf') return 'pdf';
+  if (AUDIO_EXTS.has(ext)) return 'audio';
+  if (VIDEO_EXTS.has(ext)) return 'video';
+  return null;
+}
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -73,8 +84,7 @@ export default function App() {
   const [outlineOpen, setOutlineOpen]   = useState(false);
   const [headContent, setHeadContent] = useState<string | null | undefined>(undefined);
   const [activeDiff, setActiveDiff]   = useState<{ path: string; head: string | null; current: string; readOnly?: boolean; aLabel?: string } | null>(null);
-  const [activeImage, setActiveImage] = useState<string | null>(null);
-  const [activePdf, setActivePdf]     = useState<string | null>(null);
+  // (Images, PDFs, audio, video are now opened as tabs — detected from path extension)
   const [gitRefreshKey, setGitRefreshKey] = useState(0);
   const [focusFileTreeReq, setFocusFileTreeReq] = useState<number | undefined>(undefined);
   const [terminalOpen, setTerminalOpen]         = useState(false);
@@ -114,6 +124,10 @@ export default function App() {
   const splitTab  = splitTabs.find(t => t.path === splitPath) ?? null;
   // Single source of truth for which note is "active" — used by the editor toolbar.
   const focusedTab = activePaneIdx === 1 ? splitTab : activeTab;
+  // Detect attachment kind for active/split/focused tabs
+  const activeKind = activeTab ? attachmentKind(activeTab.path) : null;
+  const splitKind  = splitTab  ? attachmentKind(splitTab.path)  : null;
+  const focusedKind = focusedTab ? attachmentKind(focusedTab.path) : null;
   // Effective split ratio (clamped 0.1..0.9)
   const splitRatio = Math.max(0.1, Math.min(0.9, settings.splitPaneRatio ?? 0.5));
   useEffect(() => { splitRatioRef.current = splitRatio; }, [splitRatio]);
@@ -206,22 +220,32 @@ export default function App() {
       return;
     }
 
-    // Image files → ImageViewer; PDFs → PdfViewer
-    const ext = rawTarget.split('.').pop()?.toLowerCase() ?? '';
-    if (IMAGE_EXTS.has(ext)) {
-      setActiveImage(rawTarget);
-      setActiveDiff(null);
-      setActivePdf(null);
-      return;
-    }
-    if (ext === 'pdf') {
-      setActivePdf(rawTarget);
-      setActiveDiff(null);
-      setActiveImage(null);
-      return;
-    }
-
     if (!snapshot) return;
+
+    // Attachment files (images, PDFs, audio, video) → open as tab without loading content
+    const kind = attachmentKind(rawTarget);
+    if (kind) {
+      // Resolve relative paths
+      let filePath = rawTarget;
+      if (!rawTarget.startsWith('/')) {
+        const match = snapshot.allPaths.find(p => p.endsWith('/' + rawTarget) || p === rawTarget);
+        if (match) filePath = match;
+        else if (snapshot.vaultPath) filePath = `${snapshot.vaultPath}/${rawTarget}`;
+      }
+
+      const pseudoDoc: NoteDocument = { path: filePath, raw: '', headings: [], dirty: false, mtimeMs: 0 };
+      const pane = paneOverride ?? activePaneIdx;
+
+      if (pane === 1 && splitEnabled) {
+        setSplitTabs(prev => prev.find(t => t.path === filePath) ? prev : [...prev, pseudoDoc]);
+        setSplitPath(filePath);
+      } else {
+        setTabs(prev => prev.find(t => t.path === filePath) ? prev : [...prev, pseudoDoc]);
+        setActivePath(filePath);
+      }
+      setActiveDiff(null);
+      return;
+    }
 
     // Resolve wikilink target to absolute path
     let filePath = rawTarget;
@@ -289,18 +313,37 @@ export default function App() {
   }, [openNote]);
 
   // ─── Close a tab ─────────────────────────────────────────────────────────
+  //
+  // If closing the last tab in the left pane while a split is open with tabs,
+  // promote the split pane's tabs into the left pane and collapse the split —
+  // the right pane "moves over" to fill the empty space.
   const closeTab = useCallback((path: string) => {
     setTabs(prev => {
       const idx = prev.findIndex(t => t.path === path);
       if (idx === -1) return prev;
       const next = prev.filter(t => t.path !== path);
+
+      if (next.length === 0 && splitEnabledRef.current && splitTabs.length > 0) {
+        // Promote right pane → left pane
+        const promotedActive = splitPathRef.current ?? splitTabs[0]?.path ?? null;
+        setActivePath(promotedActive);
+        setSplitEnabled(false);
+        setSplitPath(null);
+        setActivePaneIdx(0);
+        setTimeout(() => editorRef.current?.focus(), 50);
+        // Hand the split's tabs over to the left pane
+        const promotedTabs = splitTabs;
+        setSplitTabs([]);
+        return promotedTabs;
+      }
+
       if (activePath === path) {
         const newActive = next[Math.min(idx, next.length - 1)]?.path ?? null;
         setActivePath(newActive);
       }
       return next;
     });
-  }, [activePath]);
+  }, [activePath, splitTabs]);
 
   // ─── Jump back in navigation history ─────────────────────────────────────
   const jumpBack = useCallback(() => {
@@ -896,8 +939,9 @@ export default function App() {
       {/* ── Workspace ────────────────────────────────────────────────────── */}
       <main className="workspace">
         <div className={`workspace-body workspace-body--${terminalOpen ? terminalPosition : 'bottom'}`}>
+        <div className="panes-wrapper">
         {/* Editor toolbar applies to whichever pane is active */}
-        {focusedTab && !activeImage && !activePdf && !activeDiff && (
+        {focusedTab && !focusedKind && !activeDiff && (
           <div className="editor-toolbar">
             <button
               className={`editor-mode-btn${settings.editorMode === 'live-preview' ? ' active' : ''}`}
@@ -957,21 +1001,37 @@ export default function App() {
           <TabBar
             tabs={tabs}
             activePath={activePath}
-            onActivate={p => { setActivePath(p); setActiveDiff(null); setActiveImage(null); setActivePdf(null); }}
+            onActivate={p => { setActivePath(p); setActiveDiff(null); }}
             onClose={closeTab}
           />
-          {activeImage && snapshot?.vaultPath ? (
+          {activeKind === 'image' && activeTab && snapshot?.vaultPath ? (
             <ImageViewer
-              path={activeImage}
+              path={activeTab.path}
               vaultPath={snapshot.vaultPath}
-              onClose={() => setActiveImage(null)}
+              onClose={() => closeTab(activeTab.path)}
             />
-          ) : activePdf && snapshot?.vaultPath ? (
+          ) : activeKind === 'pdf' && activeTab && snapshot?.vaultPath ? (
             <PdfViewer
-              path={activePdf}
+              path={activeTab.path}
               vaultPath={snapshot.vaultPath}
-              onClose={() => setActivePdf(null)}
+              onClose={() => closeTab(activeTab.path)}
             />
+          ) : (activeKind === 'audio' || activeKind === 'video') && activeTab && snapshot?.vaultPath ? (
+            <div className="media-viewer">
+              <div className="media-viewer-header">
+                <span className="media-viewer-name">
+                  {activeKind === 'audio' ? '🎵' : '🎬'} {activeTab.path.split('/').pop()}
+                </span>
+                <button className="image-viewer-close" onClick={() => closeTab(activeTab.path)} title="Schließen">✕</button>
+              </div>
+              <div className="media-viewer-body">
+                {activeKind === 'audio' ? (
+                  <audio controls src={`vault://${activeTab.path.startsWith(snapshot.vaultPath + '/') ? activeTab.path.slice(snapshot.vaultPath.length + 1) : activeTab.path}`} />
+                ) : (
+                  <video controls src={`vault://${activeTab.path.startsWith(snapshot.vaultPath + '/') ? activeTab.path.slice(snapshot.vaultPath.length + 1) : activeTab.path}`} />
+                )}
+              </div>
+            </div>
           ) : activeDiff ? (
             <DiffViewer
               path={activeDiff.path}
@@ -1107,7 +1167,34 @@ export default function App() {
                 });
               }}
             />
-            {splitTab ? (
+            {splitKind === 'image' && splitTab && snapshot?.vaultPath ? (
+              <ImageViewer
+                path={splitTab.path}
+                vaultPath={snapshot.vaultPath}
+                onClose={() => closeSplitPane()}
+              />
+            ) : splitKind === 'pdf' && splitTab && snapshot?.vaultPath ? (
+              <PdfViewer
+                path={splitTab.path}
+                vaultPath={snapshot.vaultPath}
+                onClose={() => closeSplitPane()}
+              />
+            ) : (splitKind === 'audio' || splitKind === 'video') && splitTab && snapshot?.vaultPath ? (
+              <div className="media-viewer">
+                <div className="media-viewer-header">
+                  <span className="media-viewer-name">
+                    {splitKind === 'audio' ? '🎵' : '🎬'} {splitTab.path.split('/').pop()}
+                  </span>
+                </div>
+                <div className="media-viewer-body">
+                  {splitKind === 'audio' ? (
+                    <audio controls src={`vault://${splitTab.path.startsWith(snapshot.vaultPath + '/') ? splitTab.path.slice(snapshot.vaultPath.length + 1) : splitTab.path}`} />
+                  ) : (
+                    <video controls src={`vault://${splitTab.path.startsWith(snapshot.vaultPath + '/') ? splitTab.path.slice(snapshot.vaultPath.length + 1) : splitTab.path}`} />
+                  )}
+                </div>
+              </div>
+            ) : splitTab && !splitKind ? (
               <MarkdownEditor
                 ref={splitEditorRef}
                 key={splitTab.path + '-split'}
@@ -1145,6 +1232,7 @@ export default function App() {
           </div>
         )}
         </div>{/* panes-container */}
+        </div>{/* panes-wrapper */}
 
         {/* ── Terminal panel ──────────────────────────────────────────── */}
         {terminalMounted && (

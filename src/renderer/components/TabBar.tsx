@@ -1,10 +1,23 @@
 import type { NoteDocument } from '../../../shared/ipc';
 
+const IMAGE_EXTS = new Set(['png','jpg','jpeg','gif','webp','svg','bmp','ico','avif']);
+const AUDIO_EXTS = new Set(['mp3','wav','ogg','flac','m4a','aac','wma']);
+const VIDEO_EXTS = new Set(['mp4','webm','mov','avi','mkv','wmv']);
+
 interface TabBarProps {
   tabs: NoteDocument[];
   activePath: string | null;
   onActivate: (path: string) => void;
   onClose: (path: string) => void;
+}
+
+function tabIcon(path: string): string {
+  const ext = path.split('.').pop()?.toLowerCase() ?? '';
+  if (IMAGE_EXTS.has(ext)) return '🖼️ ';
+  if (ext === 'pdf') return '📋 ';
+  if (AUDIO_EXTS.has(ext)) return '🎵 ';
+  if (VIDEO_EXTS.has(ext)) return '🎬 ';
+  return '';
 }
 
 function tabTitle(doc: NoteDocument): string {
@@ -28,7 +41,7 @@ export default function TabBar({ tabs, activePath, onActivate, onClose }: TabBar
             title={tab.path}
           >
             {tab.dirty && <span className="tab-dirty">•</span>}
-            <span className="tab-title">{tabTitle(tab)}</span>
+            <span className="tab-title">{tabIcon(tab.path)}{tabTitle(tab)}</span>
             <button
               className="tab-close"
               onClick={e => { e.stopPropagation(); onClose(tab.path); }}

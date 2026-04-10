@@ -1940,11 +1940,19 @@ body {
 .workspace-body--bottom { flex-direction: column; }
 .workspace-body--right  { flex-direction: row; }
 
-/* panes-container fills workspace-body; editor-area fills pane */
-.workspace-body .panes-container { flex: 1; min-width: 0; min-height: 0; }
+/* Wrapper keeps toolbar + panes in a column regardless of terminal position */
+.panes-wrapper {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  min-width: 0;
+  min-height: 0;
+  overflow: hidden;
+}
+
+/* panes-container fills panes-wrapper; editor-area fills pane */
+.panes-wrapper .panes-container { flex: 1; min-width: 0; min-height: 0; }
 .panes-container .editor-area { flex: 1; min-width: 0; min-height: 0; }
-/* backwards-compat if editor-area is direct child */
-.workspace-body > .editor-area { flex: 1; min-width: 0; min-height: 0; }
 
 /* ─── Terminal panel ──────────────────────────────────────────────────────── */
 
@@ -2385,6 +2393,56 @@ body {
   width: 100%;
   height: 100%;
   background: #fff;
+}
+
+/* ─── Media viewer (audio / video) ───────────────────────────────────────── */
+
+.media-viewer {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  overflow: hidden;
+  background: var(--bg-app);
+}
+
+.media-viewer-header {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 6px 14px;
+  background: var(--bg-sidebar);
+  border-bottom: 1px solid var(--border);
+  flex-shrink: 0;
+  user-select: none;
+}
+
+.media-viewer-name {
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--text-primary);
+  flex: 1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.media-viewer-body {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 24px;
+}
+
+.media-viewer-body audio {
+  width: 100%;
+  max-width: 500px;
+}
+
+.media-viewer-body video {
+  max-width: 100%;
+  max-height: 100%;
+  border-radius: 6px;
 }
 
 /* ─── Backlinks Panel ────────────────────────────────────────────────────── */
