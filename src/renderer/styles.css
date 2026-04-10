@@ -2733,6 +2733,117 @@ body {
   color: var(--text-faint);
 }
 
+/* ─── Bookmarks Panel ────────────────────────────────────────────────────── */
+
+.bookmarks-panel {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  overflow-y: auto;
+}
+
+.bookmarks-empty {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--text-faint);
+  font-size: 12px;
+  padding: 24px 16px;
+  text-align: center;
+}
+
+.bookmarks-list {
+  list-style: none;
+  margin: 0;
+  padding: 4px 0;
+}
+
+.bookmarks-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 14px;
+  cursor: pointer;
+  border-bottom: 1px solid var(--border-subtle, var(--border));
+  transition: background 0.1s;
+}
+.bookmarks-item:hover { background: var(--bg-hover); }
+.bookmarks-item:last-child { border-bottom: none; }
+.bookmarks-item.active { background: var(--bg-active); }
+
+.bookmarks-icon {
+  flex-shrink: 0;
+  color: var(--accent);
+  display: flex;
+  align-items: center;
+}
+
+.bookmarks-name {
+  font-size: 13px;
+  color: var(--text-primary);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  flex: 1;
+}
+
+.bookmarks-remove {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 18px;
+  height: 18px;
+  border-radius: 3px;
+  border: none;
+  background: transparent;
+  color: var(--text-faint);
+  cursor: pointer;
+  font-size: 14px;
+  padding: 0;
+  flex-shrink: 0;
+  opacity: 0;
+  transition: opacity 0.1s, background 0.1s;
+}
+.bookmarks-item:hover .bookmarks-remove { opacity: 1; }
+.bookmarks-remove:hover {
+  background: var(--bg-active);
+  color: var(--text-primary);
+}
+
+/* ─── Tab bookmark button ────────────────────────────────────────────────── */
+
+.tab-bookmark-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 18px;
+  height: 18px;
+  border-radius: 3px;
+  border: none;
+  background: transparent;
+  color: var(--text-faint);
+  cursor: pointer;
+  padding: 0;
+  flex-shrink: 0;
+  opacity: 0;
+  transition: opacity 0.1s, color 0.1s;
+}
+
+.tab:hover .tab-bookmark-btn,
+.tab.tab-active .tab-bookmark-btn {
+  opacity: 1;
+}
+
+.tab-bookmark-btn.bookmarked {
+  color: var(--accent);
+  opacity: 1;
+}
+
+.tab-bookmark-btn:hover {
+  color: var(--accent);
+}
+
 /* ─── Split Pane ─────────────────────────────────────────────────────────── */
 
 .panes-container {

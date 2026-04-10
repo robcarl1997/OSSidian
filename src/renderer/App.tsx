@@ -42,6 +42,7 @@ import PdfViewer from './components/PdfViewer';
 import BacklinksPanel from './components/BacklinksPanel';
 import GraphView from './components/GraphView';
 import StatusBar from './components/StatusBar';
+import BookmarksPanel from './components/BookmarksPanel';
 import { marked } from 'marked';
 
 const GRAPH_TAB_PATH = '__graph__';
@@ -161,7 +162,7 @@ export default function App() {
   const [quickOpenOpen, setQuickOpenOpen] = useState(false);
   const [commandPaletteOpen, setCommandPaletteOpen] = useState(false);
   const [sidebarOpen, setSidebarOpen]   = useState(true);
-  const [sidebarTab, setSidebarTab]     = useState<'files' | 'git' | 'backlinks'>('files');
+  const [sidebarTab, setSidebarTab]     = useState<'files' | 'git' | 'backlinks' | 'bookmarks'>('files');
   const [outlineOpen, setOutlineOpen]   = useState(false);
   const [headContent, setHeadContent] = useState<string | null | undefined>(undefined);
   const [activeDiff, setActiveDiff]   = useState<{ path: string; head: string | null; current: string; readOnly?: boolean; aLabel?: string } | null>(null);
@@ -871,6 +872,15 @@ export default function App() {
     if (partial.terminalPosition) setTerminalPosition(partial.terminalPosition);
   }, []);
 
+  // ─── Toggle bookmark ──────────────────────────────────────────────────────
+  const toggleBookmark = useCallback((path: string) => {
+    const current = snapshotRef.current?.settings.bookmarks ?? [];
+    const next = current.includes(path)
+      ? current.filter(p => p !== path)
+      : [...current, path];
+    handleSettingsSave({ bookmarks: next });
+  }, [handleSettingsSave]);
+
   // ─── Reload open tabs after git restore ──────────────────────────────────
   const handleRestoreComplete = useCallback(async (vaultRelPaths: string[]) => {
     const vaultRoot = snapshotRef.current?.vaultPath;
@@ -1098,6 +1108,15 @@ export default function App() {
               <line x1="12" y1="4" x2="13" y2="11"/>
             </svg>
           </button>
+          <button
+            className={`activity-btn${sidebarTab === 'bookmarks' && sidebarOpen ? ' active' : ''}`}
+            title="Lesezeichen"
+            onClick={() => sidebarTab === 'bookmarks' ? setSidebarOpen(v => !v) : (setSidebarTab('bookmarks'), setSidebarOpen(true))}
+          >
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+              <polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"/>
+            </svg>
+          </button>
         </div>
         <div className="activity-bar-bottom">
           <button className="activity-btn" title="Einstellungen" onClick={() => setSettingsOpen(true)}>
@@ -1122,6 +1141,7 @@ export default function App() {
             {sidebarTab === 'files'
               ? (snapshot?.vaultPath?.replace(/\\/g, '/').split('/').pop() ?? 'Kein Vault')
               : sidebarTab === 'git' ? 'Git'
+              : sidebarTab === 'bookmarks' ? 'Lesezeichen'
               : 'Rückverknüpfungen'}
           </span>
           {sidebarTab === 'files' && (
@@ -1204,6 +1224,13 @@ export default function App() {
             }}
             onRestoreComplete={handleRestoreComplete}
           />
+        ) : sidebarTab === 'bookmarks' ? (
+          <BookmarksPanel
+            bookmarks={settings.bookmarks ?? []}
+            activePath={activePath}
+            onOpen={openNote}
+            onRemove={toggleBookmark}
+          />
         ) : (
           <BacklinksPanel
             targetPath={activePath}
@@ -1279,6 +1306,8 @@ export default function App() {
             activePath={activePath}
             onActivate={p => { setActivePath(p); setActiveDiff(null); }}
             onClose={closeTab}
+            bookmarks={settings.bookmarks ?? []}
+            onToggleBookmark={toggleBookmark}
           />
           {activePath === GRAPH_TAB_PATH && snapshot ? (
             <GraphView
@@ -1451,6 +1480,8 @@ export default function App() {
                   return next;
                 });
               }}
+              bookmarks={settings.bookmarks ?? []}
+              onToggleBookmark={toggleBookmark}
             />
             {splitKind === 'image' && splitTab && snapshot?.vaultPath ? (
               <ImageViewer
