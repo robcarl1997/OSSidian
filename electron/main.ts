@@ -18,6 +18,7 @@ import type {
   VaultChangeEvent,
   GitStatus,
   GitCommit,
+  TagInfo,
 } from '../shared/ipc';
 import * as yaml from 'js-yaml';
 import { DEFAULT_SETTINGS } from '../shared/ipc';
@@ -374,6 +375,65 @@ function setupIPC(): void {
     const raw = fs.readFileSync(filePath, 'utf-8');
     const stat = fs.statSync(filePath);
     return makeDoc(filePath, raw, stat.mtimeMs);
+  });
+
+  // ── tags:getAll ──────────────────────────────────────────────────────────
+  ipcMain.handle('tags:getAll', async (): Promise<TagInfo[]> => {
+    if (!vaultPath) return [];
+    const tags = new Map<string, { count: number; files: string[] }>();
+
+    // Ensure noteCache is populated for all .md files
+    const snapshot = buildSnapshot();
+    for (const filePath of snapshot.allPaths) {
+      if (!filePath.endsWith('.md')) continue;
+      try {
+        const cached = noteCache.get(filePath);
+        const raw = cached?.raw ?? fs.readFileSync(filePath, 'utf-8');
+        if (!cached) {
+          const mtimeMs = fs.statSync(filePath).mtimeMs;
+          noteCache.set(filePath, { raw, mtimeMs });
+        }
+        const fileTags = extractTags(raw);
+        for (const tag of fileTags) {
+          const existing = tags.get(tag) ?? { count: 0, files: [] };
+          existing.count++;
+          existing.files.push(filePath);
+          tags.set(tag, existing);
+        }
+      } catch { /* skip unreadable files */ }
+    }
+
+    return Array.from(tags.entries())
+      .map(([tag, info]) => ({ tag, count: info.count, files: info.files }))
+      .sort((a, b) => b.count - a.count);
+  });
+
+  // ── tags:search ─────────────────────────────────────────────────────────
+  ipcMain.handle('tags:search', async (_e, tag: string): Promise<SearchResult[]> => {
+    if (!vaultPath || !tag.trim()) return [];
+    const results: SearchResult[] = [];
+    const tagNeedle = tag.startsWith('#') ? tag : `#${tag}`;
+    const snapshot = buildSnapshot();
+
+    for (const filePath of snapshot.allPaths) {
+      if (!filePath.endsWith('.md')) continue;
+      try {
+        const cached = noteCache.get(filePath);
+        const raw = cached?.raw ?? fs.readFileSync(filePath, 'utf-8');
+        const fileTags = extractTags(raw);
+        if (fileTags.includes(tag.startsWith('#') ? tag.slice(1) : tag)) {
+          const name = path.basename(filePath, '.md');
+          const idx = raw.indexOf(tagNeedle);
+          const excerpt = idx !== -1
+            ? '…' + raw.slice(Math.max(0, idx - 30), idx + 60).replace(/\n/g, ' ') + '…'
+            : raw.slice(0, 80).replace(/\n/g, ' ');
+          results.push({ path: filePath, name, excerpt });
+          if (results.length >= 50) break;
+        }
+      } catch { /* skip unreadable files */ }
+    }
+
+    return results;
   });
 
   // ── shell:open-external ──────────────────────────────────────────────────
@@ -742,6 +802,56 @@ ${html}
 
 function escapeRe(s: string): string {
   return s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+}
+
+/**
+ * Extract #tags from markdown content, skipping code blocks and frontmatter.
+ * Matches #tag, #tag/subtag, #Über — but NOT pure numbers like #123.
+ */
+function extractTags(raw: string): string[] {
+  const tags: string[] = [];
+  const lines = raw.split('\n');
+  let inFrontmatter = false;
+  let inCodeBlock = false;
+  let codeBlockFence = '';
+
+  for (let i = 0; i < lines.length; i++) {
+    const line = lines[i];
+
+    // Frontmatter detection (only at document start)
+    if (i === 0 && line === '---') {
+      inFrontmatter = true;
+      continue;
+    }
+    if (inFrontmatter) {
+      if (line === '---' || line === '...') inFrontmatter = false;
+      continue;
+    }
+
+    // Fenced code block detection
+    const fenceMatch = line.match(/^(`{3,}|~{3,})/);
+    if (fenceMatch) {
+      if (!inCodeBlock) {
+        inCodeBlock = true;
+        codeBlockFence = fenceMatch[1];
+      } else if (line.startsWith(codeBlockFence)) {
+        inCodeBlock = false;
+        codeBlockFence = '';
+      }
+      continue;
+    }
+    if (inCodeBlock) continue;
+
+    // Extract tags from this line, skipping inline code
+    const cleanLine = line.replace(/`[^`]+`/g, match => ' '.repeat(match.length));
+    const tagRe = /#([a-zA-Z_\u00C0-\u024F][\w\u00C0-\u024F/-]*)/g;
+    let m: RegExpExecArray | null;
+    while ((m = tagRe.exec(cleanLine)) !== null) {
+      tags.push(m[1]);
+    }
+  }
+
+  return tags;
 }
 
 // ─── Link rewriting ───────────────────────────────────────────────────────────

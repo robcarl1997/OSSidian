@@ -164,6 +164,14 @@ export interface FrontmatterEntry {
   frontmatter: Record<string, unknown>;
 }
 
+// ─── Tags ───────────────────────────────────────────────────────────────────
+
+export interface TagInfo {
+  tag: string;
+  count: number;
+  files: string[];
+}
+
 // ─── Events ──────────────────────────────────────────────────────────────────
 
 export interface VaultChangeEvent {
@@ -233,6 +241,9 @@ export interface VaultApi {
   exportHtml(notePath: string, html: string): Promise<void>;
   exportPdf(notePath: string, html: string): Promise<void>;
   openOrCreateDailyNote(): Promise<NoteDocument>;
+  // ── Tags ──────────────────────────────────────────────────────────────────
+  getAllTags(): Promise<TagInfo[]>;
+  searchByTag(tag: string): Promise<SearchResult[]>;
 }
 
 export interface WindowControls {

@@ -979,6 +979,13 @@ const INLINE_PATTERNS: Array<{
       pushReplace(out, ct, lineFrom + m.index + m[0].length);
     },
   },
+  // Inline tags: #tag, #tag/subtag
+  {
+    re: /#([a-zA-Z_\u00C0-\u024F][\w\u00C0-\u024F/-]*)/g,
+    handle(m, lineFrom, out) {
+      pushMark(out, lineFrom + m.index, lineFrom + m.index + m[0].length, 'cm-tag');
+    },
+  },
   // Image wikilinks: ![[image.png]]
   {
     re: /!\[\[([^\]\r\n]+?)\]\]/g,

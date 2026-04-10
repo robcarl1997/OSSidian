@@ -64,6 +64,10 @@ const api: VaultApi = {
     ipcRenderer.invoke('export:pdf', notePath, html),
   openOrCreateDailyNote: () =>
     ipcRenderer.invoke('note:daily'),
+  getAllTags:      () =>
+    ipcRenderer.invoke('tags:getAll'),
+  searchByTag:    (tag: string) =>
+    ipcRenderer.invoke('tags:search', tag),
 };
 
 contextBridge.exposeInMainWorld('vaultApp', api);
