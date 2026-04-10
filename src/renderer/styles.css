@@ -2232,6 +2232,48 @@ body {
   width: auto;
 }
 
+/* ─── Graph view ──────────────────────────────────────────────────────────── */
+
+.graph-view {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  overflow: hidden;
+  background: var(--bg-app);
+}
+
+.graph-view-header {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 6px 14px;
+  background: var(--bg-sidebar);
+  border-bottom: 1px solid var(--border);
+  flex-shrink: 0;
+}
+
+.graph-view-title {
+  font-weight: 600;
+  font-size: 13px;
+  color: var(--text-primary);
+}
+
+.graph-view-stats {
+  font-size: 11px;
+  color: var(--text-faint);
+}
+
+.graph-view-canvas {
+  flex: 1;
+  width: 100%;
+  display: block;
+  cursor: grab;
+}
+
+.graph-view-canvas:active {
+  cursor: grabbing;
+}
+
 /* ─── Diff viewer ─────────────────────────────────────────────────────────── */
 
 .diff-viewer {

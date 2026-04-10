@@ -38,7 +38,10 @@ import DiffViewer from './components/DiffViewer';
 import ImageViewer from './components/ImageViewer';
 import PdfViewer from './components/PdfViewer';
 import BacklinksPanel from './components/BacklinksPanel';
+import GraphView from './components/GraphView';
 import { marked } from 'marked';
+
+const GRAPH_TAB_PATH = '__graph__';
 
 const IMAGE_EXTS = new Set(['png','jpg','jpeg','gif','webp','svg','bmp','ico','avif']);
 const AUDIO_EXTS = new Set(['mp3','wav','ogg','flac','m4a','aac','wma']);
@@ -881,6 +884,19 @@ export default function App() {
     return () => window.removeEventListener('keydown', handler);
   }, [settings.editorFontSize, handleSettingsSave]);
 
+  // ─── Open graph view as a tab ──────────────────────────────────────────────
+  const openGraphView = useCallback(() => {
+    const existing = tabs.find(t => t.path === GRAPH_TAB_PATH);
+    if (existing) {
+      setActivePath(GRAPH_TAB_PATH);
+    } else {
+      const pseudoDoc: NoteDocument = { path: GRAPH_TAB_PATH, raw: '', headings: [], dirty: false, mtimeMs: 0 };
+      setTabs(prev => [...prev, pseudoDoc]);
+      setActivePath(GRAPH_TAB_PATH);
+    }
+    setActiveDiff(null);
+  }, [tabs]);
+
   // ─── Vault select ─────────────────────────────────────────────────────────
   const selectVault = useCallback(async () => {
     const snap = await window.vaultApp.selectVault();
@@ -994,6 +1010,22 @@ export default function App() {
               <path d="M9 4h3a2 2 0 012 2v4a2 2 0 01-2 2H9"/>
               <line x1="5" y1="8" x2="11" y2="8"/>
               <polyline points="8 5 11 8 8 11"/>
+            </svg>
+          </button>
+          <button
+            className={`activity-btn${activePath === GRAPH_TAB_PATH ? ' active' : ''}`}
+            title="Graph-Ansicht"
+            onClick={() => openGraphView()}
+          >
+            <svg width="18" height="18" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round">
+              <circle cx="4" cy="4" r="2" fill="currentColor" stroke="none"/>
+              <circle cx="12" cy="4" r="2" fill="currentColor" stroke="none"/>
+              <circle cx="8" cy="12" r="2" fill="currentColor" stroke="none"/>
+              <circle cx="13" cy="11" r="1.5" fill="currentColor" stroke="none"/>
+              <line x1="4" y1="4" x2="12" y2="4"/>
+              <line x1="4" y1="4" x2="8" y2="12"/>
+              <line x1="12" y1="4" x2="8" y2="12"/>
+              <line x1="12" y1="4" x2="13" y2="11"/>
             </svg>
           </button>
         </div>
@@ -1115,7 +1147,7 @@ export default function App() {
         <div className={`workspace-body workspace-body--${terminalOpen ? terminalPosition : 'bottom'}`}>
         <div className="panes-wrapper">
         {/* Editor toolbar applies to whichever pane is active */}
-        {focusedTab && !focusedKind && !activeDiff && (
+        {focusedTab && !focusedKind && !activeDiff && focusedTab.path !== GRAPH_TAB_PATH && (
           <div className="editor-toolbar">
             <button
               className={`editor-mode-btn${settings.editorMode === 'live-preview' ? ' active' : ''}`}
@@ -1178,7 +1210,14 @@ export default function App() {
             onActivate={p => { setActivePath(p); setActiveDiff(null); }}
             onClose={closeTab}
           />
-          {activeKind === 'image' && activeTab && snapshot?.vaultPath ? (
+          {activePath === GRAPH_TAB_PATH && snapshot ? (
+            <GraphView
+              allPaths={snapshot.allPaths}
+              activePath={null}
+              vaultPath={snapshot.vaultPath}
+              onOpenNote={(path) => openNote(path)}
+            />
+          ) : activeKind === 'image' && activeTab && snapshot?.vaultPath ? (
             <ImageViewer
               path={activeTab.path}
               vaultPath={snapshot.vaultPath}
