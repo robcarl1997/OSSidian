@@ -27,7 +27,8 @@ export type AppAction =
   | 'splitPane'
   | 'paneShrink'
   | 'paneGrow'
-  | 'paneReset';
+  | 'paneReset'
+  | 'commandPalette';
 
 export interface AppKeybinding {
   key: string;      // normalised combo, e.g. "Ctrl+P", "Ctrl+Shift+O"
@@ -84,6 +85,7 @@ export const DEFAULT_SETTINGS: AppSettings = {
     { key: 'Ctrl+Alt+ArrowLeft',  action: 'paneShrink' },
     { key: 'Ctrl+Alt+ArrowRight', action: 'paneGrow'   },
     { key: 'Ctrl+Alt+0',          action: 'paneReset'  },
+    { key: 'Ctrl+Shift+P',        action: 'commandPalette' },
   ],
 };
 

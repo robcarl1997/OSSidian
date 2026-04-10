@@ -6,6 +6,7 @@ import React, {
   useDeferredValue,
 } from 'react';
 import type {
+  AppAction,
   AppSettings,
   NoteDocument,
   VaultEntry,
@@ -30,6 +31,7 @@ import TabBar from './components/TabBar';
 import FileTree from './components/FileTree';
 import SettingsPanel from './components/SettingsPanel';
 import QuickOpen from './components/QuickOpen';
+import CommandPalette from './components/CommandPalette';
 import MarkdownEditor, { type MarkdownEditorHandle } from './editor/MarkdownEditor';
 import OutlinePanel from './components/OutlinePanel';
 import GitPanel from './components/GitPanel';
@@ -153,6 +155,7 @@ export default function App() {
   const [pendingAnchor, setPendingAnchor] = useState<string | null>(null);
   const [navHistory, setNavHistory]     = useState<{ path: string; cursor: number }[]>([]);
   const [quickOpenOpen, setQuickOpenOpen] = useState(false);
+  const [commandPaletteOpen, setCommandPaletteOpen] = useState(false);
   const [sidebarOpen, setSidebarOpen]   = useState(true);
   const [sidebarTab, setSidebarTab]     = useState<'files' | 'git' | 'backlinks'>('files');
   const [outlineOpen, setOutlineOpen]   = useState(false);
@@ -590,6 +593,9 @@ export default function App() {
             return !v;
           });
           break;
+        case 'commandPalette':
+          setCommandPaletteOpen(true);
+          break;
       }
     };
 
@@ -790,6 +796,68 @@ export default function App() {
   const handleSplitEditorSave = useCallback((raw: string) => {
     if (splitPath) saveNote(splitPath, raw);
   }, [splitPath, saveNote]);
+
+  // ─── Execute an AppAction (used by CommandPalette) ────────────────────────
+  const executeAction = useCallback((action: AppAction) => {
+    switch (action) {
+      case 'quickOpen':       setQuickOpenOpen(true); break;
+      case 'toggleSidebar':   setSidebarOpen(v => !v); break;
+      case 'toggleOutline':   setOutlineOpen(v => !v); break;
+      case 'tabNext':         switchTab(+1); break;
+      case 'tabPrev':         switchTab(-1); break;
+      case 'tabClose':        if (activePath) closeTab(activePath); break;
+      case 'jumpBack':        jumpBack(); break;
+      case 'newNote':
+        setDialog({ kind: 'create-file', parentPath: snapshot?.vaultPath ?? '' });
+        setDialogInput('');
+        break;
+      case 'openSettings':    setSettingsOpen(true); break;
+      case 'toggleTerminal':
+        setTerminalOpen(v => {
+          if (!v) {
+            setTerminalMounted(true);
+            setTimeout(() => window.vaultApp.writeContext(activePathRef.current, editorSelectionRef.current), 0);
+          } else {
+            setTimeout(() => editorRef.current?.focus(), 0);
+          }
+          return !v;
+        });
+        break;
+      case 'focusFileTree':
+        if (sidebarOpen && sidebarTab === 'files') {
+          setSidebarOpen(false);
+        } else {
+          setSidebarOpen(true);
+          setSidebarTab('files');
+          setFocusFileTreeReq(v => (v ?? 0) + 1);
+        }
+        break;
+      case 'focusGit':
+        if (sidebarOpen && sidebarTab === 'git') {
+          setSidebarOpen(false);
+        } else {
+          setSidebarOpen(true);
+          setSidebarTab('git');
+        }
+        break;
+      case 'focusBacklinks':
+        if (sidebarOpen && sidebarTab === 'backlinks') {
+          setSidebarOpen(false);
+        } else {
+          setSidebarOpen(true);
+          setSidebarTab('backlinks');
+        }
+        break;
+      case 'splitPane':
+        if (!splitEnabledRef.current) {
+          openSplit();
+        } else {
+          focusPane(activePaneIdxRef.current === 0 ? 1 : 0);
+        }
+        break;
+      case 'commandPalette':  setCommandPaletteOpen(true); break;
+    }
+  }, [switchTab, activePath, closeTab, jumpBack, snapshot, sidebarOpen, sidebarTab, openSplit, focusPane]);
 
   // ─── Settings ─────────────────────────────────────────────────────────────
   const handleSettingsSave = useCallback(async (partial: Partial<AppSettings>) => {
@@ -1446,6 +1514,15 @@ export default function App() {
           allPaths={snapshot?.allPaths ?? []}
           onOpen={path => openNote(path)}
           onClose={() => { setQuickOpenOpen(false); setTimeout(() => editorRef.current?.focus(), 0); }}
+        />
+      )}
+
+      {/* ── Command Palette ────────────────────────────────────────────── */}
+      {commandPaletteOpen && (
+        <CommandPalette
+          keybindings={settings.appKeybindings ?? DEFAULT_SETTINGS.appKeybindings}
+          onExecute={executeAction}
+          onClose={() => { setCommandPaletteOpen(false); setTimeout(() => editorRef.current?.focus(), 0); }}
         />
       )}
 

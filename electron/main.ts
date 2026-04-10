@@ -39,7 +39,18 @@ function loadSettings(): AppSettings {
   try {
     if (fs.existsSync(SETTINGS_FILE)) {
       const raw = fs.readFileSync(SETTINGS_FILE, 'utf-8');
-      return { ...DEFAULT_SETTINGS, ...JSON.parse(raw) };
+      const merged = { ...DEFAULT_SETTINGS, ...JSON.parse(raw) };
+      // Ensure any new default keybindings (for actions not yet in the stored
+      // array) are appended so new features work out of the box.
+      if (Array.isArray(merged.appKeybindings)) {
+        const existingActions = new Set(merged.appKeybindings.map((kb: { action: string }) => kb.action));
+        for (const def of DEFAULT_SETTINGS.appKeybindings) {
+          if (!existingActions.has(def.action)) {
+            merged.appKeybindings.push(def);
+          }
+        }
+      }
+      return merged;
     }
   } catch {
     // ignore
