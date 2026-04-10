@@ -41,6 +41,7 @@ import ImageViewer from './components/ImageViewer';
 import PdfViewer from './components/PdfViewer';
 import BacklinksPanel from './components/BacklinksPanel';
 import GraphView from './components/GraphView';
+import StatusBar from './components/StatusBar';
 import { marked } from 'marked';
 
 const GRAPH_TAB_PATH = '__graph__';
@@ -177,6 +178,7 @@ export default function App() {
   const [splitHeadContent, setSplitHeadContent] = useState<string | null | undefined>(undefined);
   const [terminalSize, setTerminalSize]         = useState(260);
   const [editorSelection, setEditorSelection]   = useState<string>('');
+  const [cursorOffset, setCursorOffset]         = useState(0);
   const splitRatioRef = useRef<number>(0.5);
   const activeCursorRef    = useRef<number>(0);
   const pendingCursors     = useRef(new Map<string, number>());
@@ -1366,6 +1368,7 @@ export default function App() {
                 onPasteAttachment={handlePasteAttachment}
                 onCursorChange={(pos) => {
                   activeCursorRef.current = pos;
+                  setCursorOffset(pos);
                   if (activePath) pendingCursors.current.set(activePath, pos);
                 }}
                 onSelectionChange={setEditorSelection}
@@ -1375,6 +1378,7 @@ export default function App() {
                   ));
                 }}
               />
+              <StatusBar doc={activeTab} cursorOffset={cursorOffset} />
             </>
           ) : (
             <div className="empty-state">
