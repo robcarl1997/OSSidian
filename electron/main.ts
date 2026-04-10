@@ -7,6 +7,7 @@ import simpleGit from 'simple-git';
 import * as pty from 'node-pty';
 import type {
   AppSettings,
+  AppKeybinding,
   VaultEntry,
   VaultSnapshot,
   NoteDocument,
@@ -39,7 +40,17 @@ function loadSettings(): AppSettings {
   try {
     if (fs.existsSync(SETTINGS_FILE)) {
       const raw = fs.readFileSync(SETTINGS_FILE, 'utf-8');
-      return { ...DEFAULT_SETTINGS, ...JSON.parse(raw) };
+      const saved = { ...DEFAULT_SETTINGS, ...JSON.parse(raw) };
+      // Merge keybindings: append default bindings for new actions not in user's set
+      if (saved.appKeybindings && Array.isArray(saved.appKeybindings)) {
+        const userActions = new Set(saved.appKeybindings.map((kb: AppKeybinding) => kb.action));
+        for (const defaultKb of DEFAULT_SETTINGS.appKeybindings) {
+          if (!userActions.has(defaultKb.action)) {
+            saved.appKeybindings.push(defaultKb);
+          }
+        }
+      }
+      return saved;
     }
   } catch {
     // ignore
@@ -693,7 +704,8 @@ function createWindow(): void {
   mainWindow.once('ready-to-show', () => mainWindow?.show());
 
   if (!app.isPackaged) {
-    mainWindow.loadURL('http://localhost:5173');
+    const devPort = process.env.VITE_DEV_PORT ?? '5173';
+    mainWindow.loadURL(`http://localhost:${devPort}`);
     mainWindow.webContents.openDevTools({ mode: 'detach' });
   } else {
     mainWindow.loadFile(path.join(__dirname, '../dist/renderer/index.html'));

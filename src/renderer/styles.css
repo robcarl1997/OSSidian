@@ -2547,3 +2547,52 @@ body {
 .pane-resize-handle:active {
   background: color-mix(in srgb, var(--accent) 60%, transparent);
 }
+
+/* ─── Zen Mode ─────────────────────────────────────────────────────────── */
+
+.app-root.zen-mode .app-titlebar,
+.app-root.zen-mode .activity-bar,
+.app-root.zen-mode .sidebar,
+.app-root.zen-mode .tab-bar,
+.app-root.zen-mode .editor-toolbar,
+.app-root.zen-mode .outline-panel,
+.app-root.zen-mode .terminal-container {
+  display: none !important;
+}
+
+.app-root.zen-mode .app {
+  /* Only the workspace (main) remains */
+  display: flex;
+}
+
+.app-root.zen-mode .workspace {
+  flex: 1;
+}
+
+/* Center content comfortably */
+.app-root.zen-mode .panes-wrapper {
+  max-width: 860px;
+  margin: 0 auto;
+  width: 100%;
+}
+
+/* Zen mode indicator */
+.zen-indicator {
+  position: fixed;
+  bottom: 16px;
+  right: 16px;
+  background: var(--bg-surface);
+  color: var(--text-muted);
+  font-size: 12px;
+  padding: 4px 12px;
+  border-radius: 6px;
+  border: 1px solid var(--border);
+  opacity: 1;
+  transition: opacity 1s ease-out;
+  z-index: 1000;
+  pointer-events: none;
+}
+
+.zen-indicator.fade-out {
+  opacity: 0;
+}
