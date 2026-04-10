@@ -530,6 +530,39 @@ export default function App() {
     setTimeout(() => editorRef.current?.focus(), 50);
   }, []);
 
+  // ─── Close a single tab in the right (split) pane ────────────────────────
+  const closeSplitTab = useCallback((path: string) => {
+    setSplitTabs(prev => {
+      const idx = prev.findIndex(t => t.path === path);
+      if (idx === -1) return prev;
+      const next = prev.filter(t => t.path !== path);
+
+      if (next.length === 0) {
+        // No tabs left in right pane — close the split
+        setSplitEnabled(false);
+        setSplitPath(null);
+        setActivePaneIdx(0);
+        setTimeout(() => editorRef.current?.focus(), 50);
+        return [];
+      }
+
+      if (splitPathRef.current === path) {
+        const newActive = next[Math.min(idx, next.length - 1)]?.path ?? null;
+        setSplitPath(newActive);
+      }
+      return next;
+    });
+  }, []);
+
+  // ─── Close tab in whichever pane is currently active ──────────────────────
+  const closeActiveTab = useCallback(() => {
+    if (activePaneIdxRef.current === 1 && splitEnabledRef.current && splitPathRef.current) {
+      closeSplitTab(splitPathRef.current);
+    } else if (activePathRef.current) {
+      closeTab(activePathRef.current);
+    }
+  }, [closeTab, closeSplitTab]);
+
   // ─── Focus pane by index ──────────────────────────────────────────────────
   const focusPane = useCallback((idx: 0 | 1) => {
     setActivePaneIdx(idx);
@@ -543,7 +576,7 @@ export default function App() {
   useEffect(() => {
     const onTabNext       = () => switchTab(+1);
     const onTabPrev       = () => switchTab(-1);
-    const onTabClose      = () => { if (activePath) closeTab(activePath); };
+    const onTabClose      = () => closeActiveTab();
     const onJumpBack      = () => jumpBack();
     const onQuickOpen     = () => setQuickOpenOpen(true);
     const onToggleSidebar = () => setSidebarOpen(v => !v);
@@ -571,7 +604,7 @@ export default function App() {
         case 'toggleOutline': setOutlineOpen(v => !v); break;
         case 'tabNext':       switchTab(+1); break;
         case 'tabPrev':       switchTab(-1); break;
-        case 'tabClose':      if (activePath) closeTab(activePath); break;
+        case 'tabClose':      closeActiveTab(); break;
         case 'jumpBack':      jumpBack(); break;
         case 'newNote':
           setDialog({ kind: 'create-file', parentPath: snapshot?.vaultPath ?? '' });
@@ -719,8 +752,7 @@ export default function App() {
         case 'h': focusPane(0); break;
         case 'l': focusPane(1); break;
         case 'c': case 'q':
-          if (activePaneIdxRef.current === 1) closeSplitPane();
-          else if (activePathRef.current) closeTab(activePathRef.current);
+          closeActiveTab();
           break;
       }
     };
@@ -780,7 +812,7 @@ export default function App() {
       window.removeEventListener('obsidian:terminal-prev',   onTerminalPrev   as EventListener);
       window.removeEventListener('keydown', onKeyDown, true);
     };
-  }, [switchTab, activePath, closeTab, jumpBack, settings.appKeybindings, snapshot, sidebarOpen, sidebarTab, openSplit, closeSplitPane, focusPane, terminalPosition, openCalendar]);
+  }, [switchTab, closeActiveTab, jumpBack, settings.appKeybindings, snapshot, sidebarOpen, sidebarTab, openSplit, focusPane, terminalPosition, openCalendar]);
 
   // ─── Global Vim key-sequence handler ──────────────────────────────────────
   //
@@ -1668,21 +1700,7 @@ export default function App() {
               tabs={splitTabs}
               activePath={splitPath}
               onActivate={p => setSplitPath(p)}
-              onClose={p => {
-                setSplitTabs(prev => {
-                  const next = prev.filter(t => t.path !== p);
-                  if (next.length === 0) {
-                    // Last tab closed → close the split pane
-                    setSplitEnabled(false);
-                    setSplitPath(null);
-                    setActivePaneIdx(0);
-                    setTimeout(() => editorRef.current?.focus(), 50);
-                  } else {
-                    if (splitPath === p) setSplitPath(next[next.length - 1]?.path ?? null);
-                  }
-                  return next;
-                });
-              }}
+              onClose={closeSplitTab}
               bookmarks={settings.bookmarks ?? []}
               onToggleBookmark={toggleBookmark}
             />
