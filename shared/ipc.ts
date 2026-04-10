@@ -244,6 +244,7 @@ export interface VaultApi {
   // ── Tags ──────────────────────────────────────────────────────────────────
   getAllTags(): Promise<TagInfo[]>;
   searchByTag(tag: string): Promise<SearchResult[]>;
+  readNoteContent(path: string): Promise<string | null>;
 }
 
 export interface WindowControls {

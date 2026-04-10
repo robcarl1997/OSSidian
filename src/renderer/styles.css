@@ -3281,3 +3281,97 @@ body {
 .zen-indicator.fade-out {
   opacity: 0;
 }
+
+/* ─── Note embeds ──────────────────────────────────────────────────────── */
+
+.cm-note-embed {
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  margin: 8px 0;
+  overflow: hidden;
+  background: var(--bg-surface);
+}
+
+.cm-note-embed-title {
+  padding: 6px 12px;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--accent);
+  background: var(--bg-hover);
+  border-bottom: 1px solid var(--border);
+  cursor: pointer;
+}
+
+.cm-note-embed-title:hover {
+  text-decoration: underline;
+}
+
+.cm-note-embed-body {
+  padding: 12px 16px;
+  font-size: 0.9em;
+  color: var(--text-primary);
+  line-height: 1.6;
+  max-height: 400px;
+  overflow-y: auto;
+}
+
+.cm-note-embed-loading {
+  color: var(--text-faint);
+  font-style: italic;
+}
+
+.cm-note-embed-body h1, .cm-note-embed-body h2, .cm-note-embed-body h3,
+.cm-note-embed-body h4, .cm-note-embed-body h5, .cm-note-embed-body h6 {
+  margin: 8px 0 4px;
+  color: var(--text-primary);
+}
+
+.cm-note-embed-body h1 { font-size: 1.3em; }
+.cm-note-embed-body h2 { font-size: 1.15em; }
+.cm-note-embed-body h3 { font-size: 1.05em; }
+
+.cm-note-embed-body p {
+  margin: 4px 0;
+}
+
+.cm-note-embed-body code {
+  background: var(--code-bg);
+  padding: 1px 4px;
+  border-radius: 3px;
+  font-size: 0.9em;
+}
+
+.cm-note-embed-body blockquote {
+  border-left: 3px solid var(--border);
+  padding-left: 10px;
+  margin: 4px 0;
+  color: var(--text-muted);
+}
+
+.cm-note-embed-body hr {
+  border: none;
+  border-top: 1px solid var(--border);
+  margin: 8px 0;
+}
+
+.cm-note-embed-body .cm-embed-li {
+  padding-left: 16px;
+  margin: 2px 0;
+}
+
+.cm-note-embed-body .cm-embed-wikilink {
+  color: var(--link);
+}
+
+.cm-note-embed-body strong {
+  font-weight: 600;
+}
+
+.cm-note-embed-body em {
+  font-style: italic;
+}
+
+.cm-note-embed-body s {
+  text-decoration: line-through;
+  opacity: 0.7;
+}

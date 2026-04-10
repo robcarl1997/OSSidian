@@ -18,6 +18,23 @@ import { EditorState, Facet, RangeSetBuilder, StateEffect, StateField } from '@c
 import * as yaml from 'js-yaml';
 import { highlightCode } from './codeHighlight';
 
+// ─── Note embed cache & effects ─────────────────────────────────────────────
+
+/** Global cache of resolved embed content: absolute note path → raw markdown */
+const embedCache = new Map<string, string>();
+
+/** In-flight fetch promises to prevent duplicate loads */
+const embedInflight = new Set<string>();
+
+/** Effect dispatched when an embed's content has been loaded */
+const setEmbedContent = StateEffect.define<{ path: string; content: string }>();
+
+/** Resolve a note name (stem) to an absolute path from allPaths */
+function resolveNotePath(name: string, allPaths: string[]): string | null {
+  const needle = name.toLowerCase().trim();
+  return allPaths.find(p => stemFromPath(p) === needle) ?? null;
+}
+
 // ─── Configuration facet ──────────────────────────────────────────────────────
 
 export interface LivePreviewConfig {
@@ -58,11 +75,37 @@ function activeLineNumbers(view: EditorView): Set<number> {
 
 function buildBlockDecorations(state: EditorState): DecorationSet {
   const cursorLineNo = state.doc.lineAt(state.selection.main.head).number;
+  const config = state.facet(livePreviewConfig);
   const items: { from: number; to: number; value: Decoration }[] = [];
 
   let pos = 0;
   while (pos <= state.doc.length) {
     const line = state.doc.lineAt(pos);
+
+    // ── Note embed: ![[NoteName]] on its own line ────────────────────────
+    const embedM = line.text.match(/^!\[\[([^\]\r\n]+?)\]\]\s*$/);
+    if (embedM) {
+      const src = embedM[1].trim();
+      if (!isImagePath(src)) {
+        const hasCursor = cursorLineNo === line.number;
+        if (!hasCursor) {
+          const notePath = resolveNotePath(src, config.allPaths);
+          if (notePath) {
+            const content = embedCache.get(notePath) ?? null;
+            items.push({
+              from: line.from,
+              to:   line.to,
+              value: Decoration.replace({
+                widget: new NoteEmbedWidget(src, notePath, content),
+                block: true,
+              }),
+            });
+          }
+        }
+        pos = line.to + 1;
+        continue;
+      }
+    }
 
     // ── YAML Frontmatter (only at document start)
     if (line.number === 1 && line.text === '---') {
@@ -239,7 +282,9 @@ export const livePreviewBlockField = StateField.define<DecorationSet>({
     // cursor positions directly so we never miss a cursor change.
     const cursorMoved = tr.state.selection.main.head !== tr.startState.selection.main.head;
     const hasDataviewEffect = tr.effects.some(e => e.is(dataviewDataReady));
-    if (tr.docChanged || cursorMoved || hasDataviewEffect) return buildBlockDecorations(tr.state);
+    // Also rebuild when embed content arrives
+    const hasEmbedUpdate = tr.effects.some(e => e.is(setEmbedContent));
+    if (tr.docChanged || cursorMoved || hasDataviewEffect || hasEmbedUpdate) return buildBlockDecorations(tr.state);
     return value;
   },
   provide: f => EditorView.decorations.from(f),
@@ -701,6 +746,125 @@ class ImageWidget extends WidgetType {
   }
 
   ignoreEvent() { return true; }
+}
+
+// ─── Note embed widget ───────────────────────────────────────────────────────
+
+class NoteEmbedWidget extends WidgetType {
+  constructor(
+    readonly noteName: string,
+    readonly notePath: string,
+    readonly content: string | null, // null = loading
+  ) { super(); }
+
+  eq(other: NoteEmbedWidget) {
+    return this.notePath === other.notePath && this.content === other.content;
+  }
+
+  toDOM(view: EditorView): HTMLElement {
+    const wrapper = document.createElement('div');
+    wrapper.className = 'cm-note-embed';
+
+    // Title bar
+    const title = document.createElement('div');
+    title.className = 'cm-note-embed-title';
+    title.textContent = this.noteName;
+    title.title = `Öffnen: ${this.noteName}`;
+    title.addEventListener('mousedown', e => {
+      e.preventDefault();
+      view.dom.dispatchEvent(new CustomEvent('obsidian:link-click', {
+        bubbles: true,
+        detail: { target: this.noteName, external: false },
+      }));
+    });
+    wrapper.appendChild(title);
+
+    // Content body
+    const body = document.createElement('div');
+    body.className = 'cm-note-embed-body';
+
+    if (this.content === null) {
+      body.textContent = 'Laden\u2026';
+      body.classList.add('cm-note-embed-loading');
+
+      // Trigger async load if not already in flight
+      if (!embedInflight.has(this.notePath)) {
+        embedInflight.add(this.notePath);
+        window.vaultApp.readNoteContent(this.notePath).then(raw => {
+          embedInflight.delete(this.notePath);
+          if (raw !== null) {
+            embedCache.set(this.notePath, raw);
+            // Force redecoration by dispatching a state effect
+            try {
+              view.dispatch({ effects: setEmbedContent.of({ path: this.notePath, content: raw }) });
+            } catch { /* view may have been destroyed */ }
+          }
+        });
+      }
+    } else {
+      body.innerHTML = renderSimpleMarkdown(this.content);
+    }
+
+    wrapper.appendChild(body);
+    return wrapper;
+  }
+
+  ignoreEvent() { return false; }
+}
+
+/** Escape HTML special characters */
+function escapeHtml(s: string): string {
+  return s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+}
+
+/** Simple markdown-to-HTML renderer for embed content */
+function renderSimpleMarkdown(md: string): string {
+  // Strip frontmatter
+  let content = md;
+  if (content.startsWith('---')) {
+    const endIdx = content.indexOf('\n---', 3);
+    if (endIdx !== -1) content = content.slice(endIdx + 4).trim();
+  }
+
+  return content
+    .split('\n')
+    .map(line => {
+      // Headings
+      const hm = line.match(/^(#{1,6})\s+(.+)/);
+      if (hm) return `<h${hm[1].length} class="cm-embed-h">${escapeHtml(hm[2])}</h${hm[1].length}>`;
+      // Task list items
+      const taskM = line.match(/^\s*[-*+]\s+\[([ xX])\]\s*(.*)/);
+      if (taskM) {
+        const checked = taskM[1].toLowerCase() === 'x';
+        return `<div class="cm-embed-li">${checked ? '\u2611' : '\u2610'} ${applyInlineFormatting(escapeHtml(taskM[2]))}</div>`;
+      }
+      // Bullet list
+      if (/^\s*[-*+]\s/.test(line)) return `<div class="cm-embed-li">\u2022 ${applyInlineFormatting(escapeHtml(line.replace(/^\s*[-*+]\s/, '')))}</div>`;
+      // Ordered list
+      const olM = line.match(/^\s*(\d+)\.\s+(.*)/);
+      if (olM) return `<div class="cm-embed-li">${escapeHtml(olM[1])}. ${applyInlineFormatting(escapeHtml(olM[2]))}</div>`;
+      // Blockquote
+      if (/^>\s?/.test(line)) return `<blockquote>${applyInlineFormatting(escapeHtml(line.replace(/^>\s?/, '')))}</blockquote>`;
+      // Horizontal rule
+      if (/^(\s*)([-*_])(\s*\2){2,}\s*$/.test(line)) return '<hr>';
+      // Empty line
+      if (!line.trim()) return '<br>';
+      // Regular paragraph
+      return `<p>${applyInlineFormatting(escapeHtml(line))}</p>`;
+    })
+    .join('\n');
+}
+
+/** Apply inline formatting (bold, italic, code, strikethrough) to already-escaped HTML */
+function applyInlineFormatting(html: string): string {
+  return html
+    .replace(/\*\*\*(.+?)\*\*\*/g, '<strong><em>$1</em></strong>')
+    .replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>')
+    .replace(/\*(.+?)\*/g, '<em>$1</em>')
+    .replace(/~~(.+?)~~/g, '<s>$1</s>')
+    .replace(/`(.+?)`/g, '<code>$1</code>')
+    .replace(/\[\[([^\]|]+?)(?:\|([^\]]+?))?\]\]/g, (_match, target, alias) =>
+      `<span class="cm-embed-wikilink">${alias ?? target}</span>`);
 }
 
 // ─── Frontmatter widget ───────────────────────────────────────────────────────

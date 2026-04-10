@@ -68,6 +68,8 @@ const api: VaultApi = {
     ipcRenderer.invoke('tags:getAll'),
   searchByTag:    (tag: string) =>
     ipcRenderer.invoke('tags:search', tag),
+  readNoteContent: (path: string) =>
+    ipcRenderer.invoke('note:readContent', path),
 };
 
 contextBridge.exposeInMainWorld('vaultApp', api);

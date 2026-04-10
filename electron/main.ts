@@ -273,6 +273,16 @@ function setupIPC(): void {
     return { mtimeMs };
   });
 
+  // ── note:readContent ─────────────────────────────────────────────────────
+  ipcMain.handle('note:readContent', (_e, filePath: string): string | null => {
+    try {
+      const cached = noteCache.get(filePath);
+      if (cached) return cached.raw;
+      if (!fs.existsSync(filePath)) return null;
+      return fs.readFileSync(filePath, 'utf-8');
+    } catch { return null; }
+  });
+
   // ── vault:create-entry ───────────────────────────────────────────────────
   ipcMain.handle('vault:create-entry', (_e, parentPath: string, name: string, kind: 'file' | 'dir') => {
     if (kind === 'dir') {
