@@ -60,6 +60,8 @@ const api: VaultApi = {
     ipcRenderer.invoke('export:html', notePath, html),
   exportPdf:      (notePath: string, html: string) =>
     ipcRenderer.invoke('export:pdf', notePath, html),
+  getCalendarNotes: (year: number, month: number, filters?: Record<string, string>) =>
+    ipcRenderer.invoke('calendar:getNotes', year, month, filters),
 };
 
 contextBridge.exposeInMainWorld('vaultApp', api);

@@ -1,3 +1,17 @@
+// ─── Calendar ────────────────────────────────────────────────────────────────
+
+export interface CalendarNote {
+  path: string;
+  name: string;
+  date: string; // YYYY-MM-DD
+  frontmatter: Record<string, unknown>;
+}
+
+export interface CalendarSavedView {
+  name: string;
+  filters: Record<string, string>;
+}
+
 // ─── Settings ────────────────────────────────────────────────────────────────
 
 export type EditorMode = 'live-preview' | 'source';
@@ -27,7 +41,8 @@ export type AppAction =
   | 'splitPane'
   | 'paneShrink'
   | 'paneGrow'
-  | 'paneReset';
+  | 'paneReset'
+  | 'openCalendar';
 
 export interface AppKeybinding {
   key: string;      // normalised combo, e.g. "Ctrl+P", "Ctrl+Shift+O"
@@ -50,6 +65,7 @@ export interface AppSettings {
   attachmentFolder: string;    // vault-relative folder for pasted images
   terminalPosition: 'bottom' | 'right';
   splitPaneRatio: number;      // 0.1 .. 0.9, fraction of width given to left pane
+  calendarViews: CalendarSavedView[];
 }
 
 export const DEFAULT_SETTINGS: AppSettings = {
@@ -67,6 +83,7 @@ export const DEFAULT_SETTINGS: AppSettings = {
   attachmentFolder: 'attachments',
   terminalPosition: 'right',
   splitPaneRatio: 0.5,
+  calendarViews: [],
   appKeybindings: [
     { key: 'Ctrl+P',         action: 'quickOpen'     },
     { key: 'Ctrl+B',         action: 'toggleSidebar' },
@@ -202,6 +219,7 @@ export interface VaultApi {
   getBacklinks(targetPath: string): Promise<BacklinkResult[]>;
   exportHtml(notePath: string, html: string): Promise<void>;
   exportPdf(notePath: string, html: string): Promise<void>;
+  getCalendarNotes(year: number, month: number, filters?: Record<string, string>): Promise<CalendarNote[]>;
 }
 
 export interface WindowControls {

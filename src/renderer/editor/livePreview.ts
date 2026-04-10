@@ -38,6 +38,8 @@ function stemFromPath(p: string): string {
 }
 
 function noteExists(target: string, allPaths: string[]): boolean {
+  // Special pseudo-link prefixes are always considered "existing"
+  if (target.startsWith('calendar:')) return true;
   const needle = target.toLowerCase().trim();
   return allPaths.some(p => stemFromPath(p) === needle);
 }

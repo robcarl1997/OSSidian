@@ -384,6 +384,7 @@ const ACTION_LABELS: Record<AppAction, string> = {
   paneShrink:      'Linke Pane verkleinern',
   paneGrow:        'Linke Pane vergrößern',
   paneReset:       'Pane-Verhältnis zurücksetzen (50/50)',
+  openCalendar:    'Kalender öffnen',
 };
 
 const VIM_COMMANDS: Partial<Record<AppAction, string>> = {

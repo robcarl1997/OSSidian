@@ -11,7 +11,12 @@ interface TabBarProps {
   onClose: (path: string) => void;
 }
 
+const PSEUDO_TABS: Record<string, { icon: string; title: string }> = {
+  '__calendar__': { icon: '', title: 'Kalender' },
+};
+
 function tabIcon(path: string): string {
+  if (PSEUDO_TABS[path]) return PSEUDO_TABS[path].icon;
   const ext = path.split('.').pop()?.toLowerCase() ?? '';
   if (IMAGE_EXTS.has(ext)) return '🖼️ ';
   if (ext === 'pdf') return '📋 ';
@@ -21,6 +26,7 @@ function tabIcon(path: string): string {
 }
 
 function tabTitle(doc: NoteDocument): string {
+  if (PSEUDO_TABS[doc.path]) return PSEUDO_TABS[doc.path].title;
   const parts = doc.path.replace(/\\/g, '/').split('/');
   const filename = parts[parts.length - 1] ?? 'Untitled';
   return filename.replace(/\.md$/, '');
