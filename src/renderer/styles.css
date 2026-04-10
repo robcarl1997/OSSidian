@@ -1999,31 +1999,76 @@ body {
 .terminal-panel--right { position: relative; }
 .terminal-resize-handle:hover { background: color-mix(in srgb, var(--accent) 40%, transparent); }
 
-/* ─── Terminal header ────────────────────────────────────────────────────── */
+/* ─── Terminal header (tab bar) ──────────────────────────────────────────── */
 
 .terminal-header {
   display: flex;
   align-items: center;
-  gap: 8px;
-  padding: 3px 10px;
+  padding: 0 4px;
   background: var(--bg-sidebar);
   border-bottom: 1px solid var(--border);
   flex-shrink: 0;
   user-select: none;
+  min-height: 30px;
 }
 
-.terminal-title {
-  font-size: 11px;
-  font-weight: 600;
+.terminal-tabs {
+  display: flex;
+  gap: 0;
+  flex: 1;
+  overflow-x: auto;
+  min-width: 0;
+}
+
+.terminal-tab {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 2px 10px;
+  font-size: 12px;
   color: var(--text-muted);
-  text-transform: uppercase;
-  letter-spacing: 0.06em;
+  background: transparent;
+  border: none;
+  border-bottom: 2px solid transparent;
+  cursor: pointer;
+  white-space: nowrap;
+  font-family: inherit;
 }
 
-.terminal-cwd {
-  font-size: 11px;
-  color: var(--accent);
-  opacity: 0.8;
+.terminal-tab:hover {
+  color: var(--text-primary);
+  background: var(--bg-hover);
+}
+
+.terminal-tab.active {
+  color: var(--text-primary);
+  border-bottom-color: var(--accent);
+}
+
+.terminal-tab-close {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 16px;
+  height: 16px;
+  font-size: 12px;
+  border-radius: 3px;
+  border: none;
+  background: transparent;
+  color: var(--text-faint);
+  cursor: pointer;
+  opacity: 0;
+  transition: opacity 0.1s;
+}
+
+.terminal-tab:hover .terminal-tab-close,
+.terminal-tab.active .terminal-tab-close {
+  opacity: 1;
+}
+
+.terminal-tab-close:hover {
+  background: var(--bg-active);
+  color: var(--danger);
 }
 
 .terminal-header-actions {
@@ -2031,6 +2076,26 @@ body {
   display: flex;
   align-items: center;
   gap: 2px;
+  flex-shrink: 0;
+}
+
+.terminal-new-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  border: none;
+  background: transparent;
+  color: var(--text-muted);
+  cursor: pointer;
+  font-size: 16px;
+  border-radius: 4px;
+}
+
+.terminal-new-btn:hover {
+  background: var(--bg-hover);
+  color: var(--text-primary);
 }
 
 .terminal-header-btn {
@@ -2048,18 +2113,29 @@ body {
   background: var(--bg-hover);
 }
 
-/* ─── Terminal container ─────────────────────────────────────────────────── */
+/* ─── Terminal instances wrapper ─────────────────────────────────────────── */
 
-.terminal-container {
+.terminal-instances-wrapper {
   flex: 1;
   overflow: hidden;
+  position: relative;
+}
+
+.terminal-instance {
+  width: 100%;
+  height: 100%;
   padding: 4px 8px;
+  overflow: hidden;
+}
+
+.terminal-instance.hidden {
+  display: none;
 }
 
 /* xterm.js overrides */
-.terminal-container .xterm              { height: 100%; }
-.terminal-container .xterm-viewport     { background: transparent !important; }
-.terminal-container .xterm-screen       { background: transparent !important; }
+.terminal-instance .xterm              { height: 100%; }
+.terminal-instance .xterm-viewport     { background: transparent !important; }
+.terminal-instance .xterm-screen       { background: transparent !important; }
 
 /* ─── Image viewer ────────────────────────────────────────────────────────── */
 

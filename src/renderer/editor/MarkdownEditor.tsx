@@ -274,6 +274,20 @@ function registerAppVimCommands(): void {
     }));
   });
 
+  // ── Terminal commands ──
+  Vim.defineEx('terminal', 'term', () => {
+    window.dispatchEvent(new CustomEvent('obsidian:toggle-terminal'));
+  });
+  Vim.defineEx('termnew', 'termn', () => {
+    window.dispatchEvent(new CustomEvent('obsidian:terminal-new'));
+  });
+  Vim.defineEx('termnext', '', () => {
+    window.dispatchEvent(new CustomEvent('obsidian:terminal-next'));
+  });
+  Vim.defineEx('termprev', '', () => {
+    window.dispatchEvent(new CustomEvent('obsidian:terminal-prev'));
+  });
+
   // Ctrl+W window navigation
   Vim.map('<C-w>v',     ':vsplit<CR>',       'normal');
   Vim.map('<C-w><C-v>', ':vsplit<CR>',       'normal');

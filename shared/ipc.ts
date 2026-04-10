@@ -27,7 +27,13 @@ export type AppAction =
   | 'splitPane'
   | 'paneShrink'
   | 'paneGrow'
-  | 'paneReset';
+  | 'paneReset'
+  | 'terminalNew'
+  | 'terminalNext'
+  | 'terminalPrev'
+  | 'terminalClose'
+  | 'terminalGrow'
+  | 'terminalShrink';
 
 export interface AppKeybinding {
   key: string;      // normalised combo, e.g. "Ctrl+P", "Ctrl+Shift+O"
@@ -84,6 +90,11 @@ export const DEFAULT_SETTINGS: AppSettings = {
     { key: 'Ctrl+Alt+ArrowLeft',  action: 'paneShrink' },
     { key: 'Ctrl+Alt+ArrowRight', action: 'paneGrow'   },
     { key: 'Ctrl+Alt+0',          action: 'paneReset'  },
+    { key: 'Ctrl+Shift+`',          action: 'terminalNew'    },
+    { key: 'Ctrl+Shift+PageDown',   action: 'terminalNext'   },
+    { key: 'Ctrl+Shift+PageUp',     action: 'terminalPrev'   },
+    { key: 'Ctrl+Shift+ArrowUp',    action: 'terminalGrow'   },
+    { key: 'Ctrl+Shift+ArrowDown',  action: 'terminalShrink' },
   ],
 };
 

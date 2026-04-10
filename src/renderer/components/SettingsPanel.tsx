@@ -384,6 +384,12 @@ const ACTION_LABELS: Record<AppAction, string> = {
   paneShrink:      'Linke Pane verkleinern',
   paneGrow:        'Linke Pane vergrößern',
   paneReset:       'Pane-Verhältnis zurücksetzen (50/50)',
+  terminalNew:     'Neues Terminal erstellen',
+  terminalNext:    'Nächstes Terminal',
+  terminalPrev:    'Vorheriges Terminal',
+  terminalClose:   'Aktuelles Terminal schließen',
+  terminalGrow:    'Terminal vergrößern',
+  terminalShrink:  'Terminal verkleinern',
 };
 
 const VIM_COMMANDS: Partial<Record<AppAction, string>> = {
@@ -396,6 +402,10 @@ const VIM_COMMANDS: Partial<Record<AppAction, string>> = {
   tabPrev:       ':tabprev  :tabp  gT',
   tabClose:      ':tabclose  :tabc',
   jumpBack:      ':jumpback  :ju',
+  toggleTerminal: ':terminal  :term',
+  terminalNew:   ':termnew  :termn',
+  terminalNext:  ':termnext',
+  terminalPrev:  ':termprev',
 };
 
 const ALL_ACTIONS = Object.keys(ACTION_LABELS) as AppAction[];

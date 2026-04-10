@@ -1,4 +1,4 @@
-import { useEffect, useRef, useCallback } from 'react';
+import { useEffect, useRef, useCallback, useState, forwardRef, useImperativeHandle } from 'react';
 import { Terminal } from '@xterm/xterm';
 import type { ITheme } from '@xterm/xterm';
 import { FitAddon } from '@xterm/addon-fit';
@@ -85,6 +85,19 @@ const XTERM_THEMES: Record<Theme, ITheme> = {
   },
 };
 
+// ─── Types ───────────────────────────────────────────────────────────────────
+
+interface TermInstance {
+  id: number;
+  name: string;
+  term: Terminal;
+  fitAddon: FitAddon;
+  pid: number | null;
+  containerEl: HTMLDivElement;
+  unsubData: (() => void) | null;
+  unsubExit: (() => void) | null;
+}
+
 // ─── Props ────────────────────────────────────────────────────────────────────
 
 interface TerminalPanelProps {
@@ -93,7 +106,7 @@ interface TerminalPanelProps {
   selection?: string;
   theme: Theme;
   position: 'bottom' | 'right';
-  size: number;                       // height (bottom) or width (right)
+  size: number;
   visible: boolean;
   onSizeChange: (s: number) => void;
   onPositionToggle: () => void;
@@ -101,9 +114,18 @@ interface TerminalPanelProps {
   onClose: () => void;
 }
 
+export interface TerminalPanelHandle {
+  newTerminal(): void;
+  nextTerminal(): void;
+  prevTerminal(): void;
+  closeTerminal(): void;
+}
+
 // ─── Component ────────────────────────────────────────────────────────────────
 
-export default function TerminalPanel({
+let nextInstanceId = 1;
+
+const TerminalPanel = forwardRef<TerminalPanelHandle, TerminalPanelProps>(function TerminalPanel({
   vaultPath,
   activeFile,
   selection,
@@ -115,137 +137,268 @@ export default function TerminalPanel({
   onPositionToggle,
   onContextUpdate,
   onClose,
-}: TerminalPanelProps) {
-  const containerRef = useRef<HTMLDivElement>(null);
-  const termRef      = useRef<Terminal | null>(null);
-  const fitAddonRef  = useRef<FitAddon | null>(null);
-  const pidRef       = useRef<number | null>(null);
-  const unsubData          = useRef<(() => void) | null>(null);
-  const unsubExit          = useRef<(() => void) | null>(null);
+}, ref) {
+  const wrapperRef   = useRef<HTMLDivElement>(null);
+  const instancesRef = useRef<TermInstance[]>([]);
+  const [instances, setInstances]     = useState<{ id: number; name: string }[]>([]);
+  const [activeTermId, setActiveTermId] = useState<number | null>(null);
   const dragRef            = useRef<{ startCoord: number; startSize: number } | null>(null);
   const onContextUpdateRef = useRef(onContextUpdate);
   const vaultPathRef       = useRef(vaultPath);
   const activeFileRef      = useRef(activeFile);
   const selectionRef       = useRef(selection);
+  const themeRef           = useRef(theme);
+  const termCountRef       = useRef(0);
 
   useEffect(() => { onContextUpdateRef.current = onContextUpdate; });
   useEffect(() => { vaultPathRef.current = vaultPath; });
   useEffect(() => { activeFileRef.current = activeFile; });
   useEffect(() => { selectionRef.current = selection; });
+  useEffect(() => { themeRef.current = theme; });
 
-  // ─── Boot terminal (once on mount) ───────────────────────────────────────
-  useEffect(() => {
-    if (!containerRef.current) return;
+  // ─── Helper: create a terminal instance ──────────────────────────────────
+
+  const createInstance = useCallback((): TermInstance => {
+    termCountRef.current += 1;
+    const id = nextInstanceId++;
+    const name = `Terminal ${termCountRef.current}`;
+
+    const containerEl = document.createElement('div');
+    containerEl.className = 'terminal-instance hidden';
+    containerEl.setAttribute('data-term-id', String(id));
 
     const term = new Terminal({
       cursorBlink: true,
       fontFamily:  "ui-monospace, 'Cascadia Code', 'Fira Code', monospace",
       fontSize:    13,
-      theme:       XTERM_THEMES[theme] ?? XTERM_THEMES.dark,
+      theme:       XTERM_THEMES[themeRef.current] ?? XTERM_THEMES.dark,
     });
 
     const fitAddon = new FitAddon();
     term.loadAddon(fitAddon);
-    term.open(containerRef.current);
-    fitAddon.fit();
 
-    termRef.current     = term;
-    fitAddonRef.current = fitAddon;
+    const inst: TermInstance = { id, name, term, fitAddon, pid: null, containerEl, unsubData: null, unsubExit: null };
+    return inst;
+  }, []);
+
+  // ─── Helper: spawn PTY for an instance ──────────────────────────────────
+
+  const spawnPty = useCallback(async (inst: TermInstance) => {
+    const env: Record<string, string> = {};
+    const af = activeFileRef.current;
+    const sel = selectionRef.current;
+    if (af)  env['OBSIDIAN_FILE']      = af;
+    if (sel) env['OBSIDIAN_SELECTION'] = sel;
+
+    const pid = await window.terminalApp.create(
+      inst.term.cols, inst.term.rows, vaultPathRef.current ?? '/', env,
+    );
+    inst.pid = pid;
+
+    // Clean up previous listeners
+    inst.unsubData?.();
+    inst.unsubExit?.();
+
+    inst.unsubData = window.terminalApp.onData((p, data) => {
+      if (p === pid) inst.term.write(data);
+    });
+    inst.unsubExit = window.terminalApp.onExit((p) => {
+      if (p !== pid) return;
+      inst.term.writeln('\r\n\x1b[2m[Prozess beendet \u2014 beliebige Taste zum Neustart]\x1b[0m');
+      inst.pid = null;
+
+      const unsub = inst.term.onData(() => {
+        unsub.dispose();
+        inst.term.reset();
+        spawnPty(inst);
+      });
+    });
+  }, []);
+
+  // ─── Helper: destroy a terminal instance ─────────────────────────────────
+
+  const destroyInstance = useCallback((inst: TermInstance) => {
+    inst.unsubData?.();
+    inst.unsubExit?.();
+    if (inst.pid !== null) {
+      window.terminalApp.kill(inst.pid);
+      inst.pid = null;
+    }
+    inst.term.dispose();
+    inst.containerEl.remove();
+  }, []);
+
+  // ─── Helper: activate a terminal ─────────────────────────────────────────
+
+  const activateTerminal = useCallback((id: number) => {
+    for (const inst of instancesRef.current) {
+      if (inst.id === id) {
+        inst.containerEl.classList.remove('hidden');
+        requestAnimationFrame(() => {
+          inst.fitAddon.fit();
+          if (inst.pid !== null) {
+            window.terminalApp.resize(inst.pid, inst.term.cols, inst.term.rows);
+          }
+          inst.term.focus();
+        });
+      } else {
+        inst.containerEl.classList.add('hidden');
+      }
+    }
+    setActiveTermId(id);
+  }, []);
+
+  // ─── Boot: create first terminal on mount ────────────────────────────────
+
+  useEffect(() => {
+    if (!wrapperRef.current) return;
+    const inst = createInstance();
+    instancesRef.current = [inst];
+    wrapperRef.current.appendChild(inst.containerEl);
+    inst.term.open(inst.containerEl);
+    inst.fitAddon.fit();
 
     const onFocus = () => onContextUpdateRef.current();
-    term.textarea?.addEventListener('focus', onFocus);
+    inst.term.textarea?.addEventListener('focus', onFocus);
 
-    // ── Spawn (or respawn) the shell process ─────────────────────────────
-    const spawnPty = async () => {
-      const env: Record<string, string> = {};
-      const af = activeFileRef.current;
-      const sel = selectionRef.current;
-      if (af)  env['OBSIDIAN_FILE']      = af;
-      if (sel) env['OBSIDIAN_SELECTION'] = sel;
-
-      const pid = await window.terminalApp.create(
-        term.cols, term.rows, vaultPathRef.current ?? '/', env,
-      );
-      pidRef.current = pid;
-
-      // Unsub previous listeners before attaching new ones
-      unsubData.current?.();
-      unsubExit.current?.();
-
-      unsubData.current = window.terminalApp.onData((p, data) => {
-        if (p === pid) term.write(data);
-      });
-      unsubExit.current = window.terminalApp.onExit((p) => {
-        if (p !== pid) return;
-        term.writeln('\r\n\x1b[2m[Prozess beendet — beliebige Taste zum Neustart]\x1b[0m');
-        pidRef.current = null;
-
-        // One-shot listener: next keypress respawns the shell
-        const unsub = term.onData(() => {
-          unsub.dispose();
-          term.reset();
-          spawnPty();
-        });
-      });
-    };
-
-    spawnPty();
-
-    term.onData(data => {
-      if (pidRef.current !== null) window.terminalApp.write(pidRef.current, data);
+    inst.term.onData(data => {
+      if (inst.pid !== null) window.terminalApp.write(inst.pid, data);
     });
 
+    spawnPty(inst);
+
+    inst.containerEl.classList.remove('hidden');
+    setInstances([{ id: inst.id, name: inst.name }]);
+    setActiveTermId(inst.id);
+
     return () => {
-      term.textarea?.removeEventListener('focus', onFocus);
-      unsubData.current?.();
-      unsubExit.current?.();
-      if (pidRef.current !== null) {
-        window.terminalApp.kill(pidRef.current);
-        pidRef.current = null;
+      for (const i of instancesRef.current) {
+        destroyInstance(i);
       }
-      term.dispose();
-      termRef.current = null;
+      instancesRef.current = [];
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
+  // ─── Imperative handle ──────────────────────────────────────────────────
+
+  const newTerminal = useCallback(() => {
+    if (!wrapperRef.current) return;
+    const inst = createInstance();
+    instancesRef.current = [...instancesRef.current, inst];
+    wrapperRef.current.appendChild(inst.containerEl);
+    inst.term.open(inst.containerEl);
+
+    const onFocus = () => onContextUpdateRef.current();
+    inst.term.textarea?.addEventListener('focus', onFocus);
+
+    inst.term.onData(data => {
+      if (inst.pid !== null) window.terminalApp.write(inst.pid, data);
+    });
+
+    spawnPty(inst);
+
+    setInstances(instancesRef.current.map(i => ({ id: i.id, name: i.name })));
+    activateTerminal(inst.id);
+  }, [createInstance, spawnPty, activateTerminal]);
+
+  const nextTerminal = useCallback(() => {
+    const all = instancesRef.current;
+    if (all.length <= 1) return;
+    const idx = all.findIndex(i => i.id === activeTermId);
+    const next = all[(idx + 1) % all.length];
+    activateTerminal(next.id);
+  }, [activeTermId, activateTerminal]);
+
+  const prevTerminal = useCallback(() => {
+    const all = instancesRef.current;
+    if (all.length <= 1) return;
+    const idx = all.findIndex(i => i.id === activeTermId);
+    const prev = all[(idx - 1 + all.length) % all.length];
+    activateTerminal(prev.id);
+  }, [activeTermId, activateTerminal]);
+
+  const closeTerminal = useCallback((targetId?: number) => {
+    const id = targetId ?? activeTermId;
+    if (id === null) return;
+    const all = instancesRef.current;
+    const idx = all.findIndex(i => i.id === id);
+    if (idx === -1) return;
+
+    const inst = all[idx];
+    destroyInstance(inst);
+    const remaining = all.filter(i => i.id !== id);
+    instancesRef.current = remaining;
+    setInstances(remaining.map(i => ({ id: i.id, name: i.name })));
+
+    if (remaining.length === 0) {
+      setActiveTermId(null);
+      onClose();
+    } else {
+      // Switch to the next or previous tab
+      const newIdx = Math.min(idx, remaining.length - 1);
+      activateTerminal(remaining[newIdx].id);
+    }
+  }, [activeTermId, destroyInstance, activateTerminal, onClose]);
+
+  useImperativeHandle(ref, () => ({
+    newTerminal,
+    nextTerminal,
+    prevTerminal,
+    closeTerminal: () => closeTerminal(),
+  }), [newTerminal, nextTerminal, prevTerminal, closeTerminal]);
+
   // ─── Live theme updates ───────────────────────────────────────────────────
+
   useEffect(() => {
-    if (!termRef.current) return;
-    termRef.current.options.theme = XTERM_THEMES[theme] ?? XTERM_THEMES.dark;
+    for (const inst of instancesRef.current) {
+      inst.term.options.theme = XTERM_THEMES[theme] ?? XTERM_THEMES.dark;
+    }
   }, [theme]);
 
   // ─── Refit on size / visibility / position changes ───────────────────────
-  const refit = useCallback(() => {
-    requestAnimationFrame(() => {
-      if (!fitAddonRef.current || !termRef.current || pidRef.current === null) return;
-      fitAddonRef.current.fit();
-      window.terminalApp.resize(pidRef.current, termRef.current.cols, termRef.current.rows);
-    });
-  }, []);
 
-  useEffect(() => { refit(); }, [size, refit]);
+  const refitActive = useCallback(() => {
+    requestAnimationFrame(() => {
+      const inst = instancesRef.current.find(i => i.id === activeTermId);
+      if (!inst) return;
+      inst.fitAddon.fit();
+      if (inst.pid !== null) {
+        window.terminalApp.resize(inst.pid, inst.term.cols, inst.term.rows);
+      }
+    });
+  }, [activeTermId]);
+
+  useEffect(() => { refitActive(); }, [size, refitActive]);
   useEffect(() => {
     if (visible) {
-      refit();
-      requestAnimationFrame(() => termRef.current?.focus());
+      refitActive();
+      requestAnimationFrame(() => {
+        const inst = instancesRef.current.find(i => i.id === activeTermId);
+        inst?.term.focus();
+      });
     }
-  }, [visible, refit]);
-  useEffect(() => { refit(); }, [position, refit]);
+  }, [visible, refitActive, activeTermId]);
+  useEffect(() => { refitActive(); }, [position, refitActive]);
 
-  // ─── ResizeObserver (catches all other size changes) ─────────────────────
+  // ─── ResizeObserver ─────────────────────────────────────────────────────
+
   useEffect(() => {
-    if (!containerRef.current) return;
+    if (!wrapperRef.current) return;
     const ro = new ResizeObserver(() => {
-      if (!fitAddonRef.current || !termRef.current || pidRef.current === null) return;
-      fitAddonRef.current.fit();
-      window.terminalApp.resize(pidRef.current, termRef.current.cols, termRef.current.rows);
+      const inst = instancesRef.current.find(i => i.id === activeTermId);
+      if (!inst) return;
+      inst.fitAddon.fit();
+      if (inst.pid !== null) {
+        window.terminalApp.resize(inst.pid, inst.term.cols, inst.term.rows);
+      }
     });
-    ro.observe(containerRef.current);
+    ro.observe(wrapperRef.current);
     return () => ro.disconnect();
-  }, []);
+  }, [activeTermId]);
 
   // ─── Drag-to-resize ───────────────────────────────────────────────────────
+
   const onHandleMouseDown = useCallback((e: React.MouseEvent) => {
     e.preventDefault();
     const coord = position === 'bottom' ? e.clientY : e.clientX;
@@ -254,8 +407,8 @@ export default function TerminalPanel({
     const onMove = (me: MouseEvent) => {
       if (!dragRef.current) return;
       const delta = position === 'bottom'
-        ? dragRef.current.startCoord - me.clientY   // drag up = grow
-        : dragRef.current.startCoord - me.clientX;  // drag left = grow
+        ? dragRef.current.startCoord - me.clientY
+        : dragRef.current.startCoord - me.clientX;
       const min = position === 'bottom' ? 80  : 200;
       const max = position === 'bottom' ? 800 : 1200;
       onSizeChange(Math.max(min, Math.min(max, dragRef.current.startSize + delta)));
@@ -281,24 +434,47 @@ export default function TerminalPanel({
         onMouseDown={onHandleMouseDown}
       />
       <div className="terminal-header">
-        <span className="terminal-title">Terminal</span>
-        {vaultPath && (
-          <span className="terminal-cwd">{vaultPath.split('/').pop()}</span>
-        )}
+        <div className="terminal-tabs">
+          {instances.map(inst => (
+            <button
+              key={inst.id}
+              className={`terminal-tab${inst.id === activeTermId ? ' active' : ''}`}
+              onClick={() => activateTerminal(inst.id)}
+            >
+              <span className="terminal-tab-label">{inst.name}</span>
+              <span
+                className="terminal-tab-close"
+                onClick={(e) => { e.stopPropagation(); closeTerminal(inst.id); }}
+                title="Terminal schlie\u00dfen"
+              >
+                {'\u00d7'}
+              </span>
+            </button>
+          ))}
+        </div>
         <div className="terminal-header-actions">
+          <button
+            className="terminal-new-btn"
+            title="Neues Terminal"
+            onClick={newTerminal}
+          >
+            +
+          </button>
           <button
             className="terminal-header-btn"
             title={isBottom ? 'Rechts andocken' : 'Unten andocken'}
             onClick={onPositionToggle}
           >
-            {isBottom ? '▶' : '▼'}
+            {isBottom ? '\u25b6' : '\u25bc'}
           </button>
-          <button className="terminal-header-btn" title="Terminal schließen" onClick={onClose}>
-            ✕
+          <button className="terminal-header-btn" title="Alle Terminals schlie\u00dfen" onClick={onClose}>
+            {'\u2715'}
           </button>
         </div>
       </div>
-      <div ref={containerRef} className="terminal-container" />
+      <div ref={wrapperRef} className="terminal-instances-wrapper" />
     </div>
   );
-}
+});
+
+export default TerminalPanel;
