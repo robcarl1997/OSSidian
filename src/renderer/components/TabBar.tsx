@@ -12,6 +12,7 @@ interface TabBarProps {
 }
 
 function tabIcon(path: string): string {
+  if (path === '__graph__') return '';
   const ext = path.split('.').pop()?.toLowerCase() ?? '';
   if (IMAGE_EXTS.has(ext)) return '🖼️ ';
   if (ext === 'pdf') return '📋 ';
@@ -21,6 +22,7 @@ function tabIcon(path: string): string {
 }
 
 function tabTitle(doc: NoteDocument): string {
+  if (doc.path === '__graph__') return 'Graph-Ansicht';
   const parts = doc.path.replace(/\\/g, '/').split('/');
   const filename = parts[parts.length - 1] ?? 'Untitled';
   return filename.replace(/\.md$/, '');
