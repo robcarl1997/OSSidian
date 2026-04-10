@@ -14,7 +14,7 @@ import {
   ViewUpdate,
   WidgetType,
 } from '@codemirror/view';
-import { EditorState, Facet, RangeSetBuilder, StateField } from '@codemirror/state';
+import { EditorState, Facet, RangeSetBuilder, StateEffect, StateField } from '@codemirror/state';
 import * as yaml from 'js-yaml';
 
 // ─── Configuration facet ──────────────────────────────────────────────────────
@@ -116,6 +116,27 @@ function buildBlockDecorations(state: EditorState): DecorationSet {
 
       if (endNo !== -1) {
         const hasCursor = cursorLineNo >= startNo && cursorLineNo <= endNo;
+
+        // ── Dataview query block ──────────────────────────────────────────
+        if (lang === 'dataview' && !hasCursor) {
+          const queryLines: string[] = [];
+          for (let n = startNo + 1; n < endNo; n++) {
+            queryLines.push(state.doc.line(n).text);
+          }
+          const queryText = queryLines.join('\n');
+          const endLine = state.doc.line(endNo);
+          items.push({
+            from: line.from,
+            to:   endLine.to,
+            value: Decoration.replace({
+              widget: new DataviewWidget(queryText),
+              block: true,
+            }),
+          });
+          pos = endLine.to + 1;
+          continue;
+        }
+
         if (!hasCursor) {
           // Hide opening fence
           items.push({ from: line.from, to: line.from,
@@ -211,7 +232,8 @@ export const livePreviewBlockField = StateField.define<DecorationSet>({
     // tr.selectionSet may not be set by all Vim-mode movements; also compare
     // cursor positions directly so we never miss a cursor change.
     const cursorMoved = tr.state.selection.main.head !== tr.startState.selection.main.head;
-    if (tr.docChanged || cursorMoved) return buildBlockDecorations(tr.state);
+    const hasDataviewEffect = tr.effects.some(e => e.is(dataviewDataReady));
+    if (tr.docChanged || cursorMoved || hasDataviewEffect) return buildBlockDecorations(tr.state);
     return value;
   },
   provide: f => EditorView.decorations.from(f),
@@ -420,6 +442,314 @@ class FrontmatterWidget extends WidgetType {
   }
 
   ignoreEvent() { return false; }
+}
+
+// ─── Dataview query parser + widget ──────────────────────────────────────────
+
+interface DataviewQuery {
+  from: string;
+  where: Array<{ field: string; op: string; value: string }>;
+  sort: { field: string; dir: 'ASC' | 'DESC' } | null;
+  fields: string[];
+  limit: number;
+}
+
+function parseDataviewQuery(text: string): DataviewQuery {
+  const query: DataviewQuery = {
+    from: '',
+    where: [],
+    sort: null,
+    fields: ['file.name'],
+    limit: 100,
+  };
+
+  for (const rawLine of text.split('\n')) {
+    const line = rawLine.trim();
+    if (!line) continue;
+
+    const colonIdx = line.indexOf(':');
+    if (colonIdx === -1) continue;
+
+    const directive = line.slice(0, colonIdx).trim().toUpperCase();
+    const rest = line.slice(colonIdx + 1).trim();
+
+    switch (directive) {
+      case 'FROM':
+        query.from = rest.replace(/^"(.*)"$/, '$1').trim();
+        break;
+      case 'WHERE': {
+        // Split on ' AND ' (case-insensitive)
+        const conditions = rest.split(/\s+AND\s+/i);
+        for (const cond of conditions) {
+          const m = cond.trim().match(/^(\S+)\s+(=|!=|>|<|>=|<=|CONTAINS)\s+(.+)$/i);
+          if (m) {
+            query.where.push({
+              field: m[1],
+              op: m[2].toUpperCase(),
+              value: m[3].replace(/^"(.*)"$/, '$1'),
+            });
+          }
+        }
+        break;
+      }
+      case 'SORT': {
+        const sm = rest.match(/^(\S+)\s+(ASC|DESC)$/i);
+        if (sm) {
+          query.sort = { field: sm[1], dir: sm[2].toUpperCase() as 'ASC' | 'DESC' };
+        } else {
+          query.sort = { field: rest.trim(), dir: 'ASC' };
+        }
+        break;
+      }
+      case 'FIELDS':
+        query.fields = rest.split(',').map(f => f.trim()).filter(Boolean);
+        break;
+      case 'LIMIT': {
+        const n = parseInt(rest, 10);
+        if (!isNaN(n) && n > 0) query.limit = n;
+        break;
+      }
+    }
+  }
+
+  return query;
+}
+
+function getFieldValue(entry: { path: string; name: string; frontmatter: Record<string, unknown> }, field: string): unknown {
+  if (field === 'file.name') return entry.name;
+  if (field === 'file.path') return entry.path;
+  return entry.frontmatter[field];
+}
+
+function matchesCondition(
+  entry: { path: string; name: string; frontmatter: Record<string, unknown> },
+  cond: { field: string; op: string; value: string },
+): boolean {
+  const val = getFieldValue(entry, cond.field);
+  if (val === undefined || val === null) return false;
+
+  const condVal = cond.value;
+
+  switch (cond.op) {
+    case '=':
+      return String(val) === condVal;
+    case '!=':
+      return String(val) !== condVal;
+    case '>': {
+      const n1 = Number(val), n2 = Number(condVal);
+      if (!isNaN(n1) && !isNaN(n2)) return n1 > n2;
+      return String(val) > condVal;
+    }
+    case '<': {
+      const n1 = Number(val), n2 = Number(condVal);
+      if (!isNaN(n1) && !isNaN(n2)) return n1 < n2;
+      return String(val) < condVal;
+    }
+    case '>=': {
+      const n1 = Number(val), n2 = Number(condVal);
+      if (!isNaN(n1) && !isNaN(n2)) return n1 >= n2;
+      return String(val) >= condVal;
+    }
+    case '<=': {
+      const n1 = Number(val), n2 = Number(condVal);
+      if (!isNaN(n1) && !isNaN(n2)) return n1 <= n2;
+      return String(val) <= condVal;
+    }
+    case 'CONTAINS': {
+      if (Array.isArray(val)) return val.some(v => String(v) === condVal);
+      return String(val).includes(condVal);
+    }
+    default:
+      return false;
+  }
+}
+
+function formatCellValue(val: unknown): string {
+  if (val === undefined || val === null) return '';
+  if (val instanceof Date) return val.toLocaleDateString('de');
+  if (Array.isArray(val)) return val.map(v => String(v)).join(', ');
+  return String(val);
+}
+
+// Store pending dataview queries — fetched asynchronously, then trigger editor update
+const dataviewResultsCache = new Map<string, Array<{ path: string; name: string; frontmatter: Record<string, unknown> }>>();
+let dataviewFetchPending = false;
+
+/** State effect used to signal that dataview data has arrived and decorations need rebuilding. */
+const dataviewDataReady = StateEffect.define<null>();
+
+function ensureDataviewData(): void {
+  if (dataviewFetchPending) return;
+  if (typeof window === 'undefined' || !window.vaultApp) return;
+
+  dataviewFetchPending = true;
+  window.vaultApp.queryFrontmatter().then(entries => {
+    dataviewResultsCache.set('__all__', entries);
+    dataviewFetchPending = false;
+
+    // Force re-render of any active editor view
+    const cm = (window as unknown as { __cm?: EditorView }).__cm;
+    if (cm) {
+      cm.dispatch({ effects: dataviewDataReady.of(null) });
+    }
+  }).catch(() => {
+    dataviewFetchPending = false;
+  });
+}
+
+class DataviewWidget extends WidgetType {
+  readonly dataLoaded: boolean;
+  constructor(readonly queryText: string) {
+    super();
+    this.dataLoaded = dataviewResultsCache.has('__all__');
+  }
+
+  eq(other: DataviewWidget) {
+    return this.queryText === other.queryText && this.dataLoaded === other.dataLoaded;
+  }
+  ignoreEvent() { return false; }
+
+  toDOM(view: EditorView): HTMLElement {
+    const wrapper = document.createElement('div');
+    wrapper.className = 'dataview-wrapper';
+
+    const allEntries = dataviewResultsCache.get('__all__');
+
+    if (!allEntries) {
+      // Data not loaded yet — show loading state and trigger fetch
+      const loading = document.createElement('div');
+      loading.className = 'dataview-loading';
+      loading.textContent = 'Dataview: Lade Daten...';
+      wrapper.appendChild(loading);
+      ensureDataviewData();
+      return wrapper;
+    }
+
+    const query = parseDataviewQuery(this.queryText);
+
+    // Filter by FROM (subfolder)
+    let entries = allEntries;
+    if (query.from) {
+      const folder = query.from.replace(/\\/g, '/');
+      entries = entries.filter(e => {
+        const rel = e.path.replace(/\\/g, '/');
+        return rel.includes('/' + folder + '/') || rel.includes('/' + folder);
+      });
+    }
+
+    // Filter by WHERE conditions
+    for (const cond of query.where) {
+      entries = entries.filter(e => matchesCondition(e, cond));
+    }
+
+    // Sort
+    if (query.sort) {
+      const { field, dir } = query.sort;
+      entries = [...entries].sort((a, b) => {
+        const va = getFieldValue(a, field);
+        const vb = getFieldValue(b, field);
+        if (va === undefined || va === null) return 1;
+        if (vb === undefined || vb === null) return -1;
+        const na = Number(va), nb = Number(vb);
+        let cmp: number;
+        if (!isNaN(na) && !isNaN(nb)) {
+          cmp = na - nb;
+        } else {
+          cmp = String(va).localeCompare(String(vb));
+        }
+        return dir === 'DESC' ? -cmp : cmp;
+      });
+    }
+
+    // Limit
+    entries = entries.slice(0, query.limit);
+
+    if (entries.length === 0) {
+      const empty = document.createElement('div');
+      empty.className = 'dataview-empty';
+      empty.textContent = 'Keine Ergebnisse gefunden.';
+      wrapper.appendChild(empty);
+      return wrapper;
+    }
+
+    // Build table
+    const table = document.createElement('table');
+    table.className = 'dataview-table';
+
+    // Header
+    const thead = document.createElement('thead');
+    const headerRow = document.createElement('tr');
+    for (const field of query.fields) {
+      const th = document.createElement('th');
+      th.textContent = field === 'file.name' ? 'Datei' : field === 'file.path' ? 'Pfad' : field;
+      headerRow.appendChild(th);
+    }
+    thead.appendChild(headerRow);
+    table.appendChild(thead);
+
+    // Body
+    const tbody = document.createElement('tbody');
+    for (const entry of entries) {
+      const tr = document.createElement('tr');
+      tr.className = 'dataview-row';
+
+      for (const field of query.fields) {
+        const td = document.createElement('td');
+
+        if (field === 'file.name') {
+          const link = document.createElement('span');
+          link.className = 'dataview-link';
+          link.textContent = entry.name;
+          link.addEventListener('mousedown', e => {
+            e.preventDefault();
+            view.dom.dispatchEvent(new CustomEvent('obsidian:link-click', {
+              bubbles: true,
+              detail: { target: entry.name, external: false },
+            }));
+          });
+          td.appendChild(link);
+        } else if (field === 'file.path') {
+          const link = document.createElement('span');
+          link.className = 'dataview-link';
+          link.textContent = entry.path;
+          link.addEventListener('mousedown', e => {
+            e.preventDefault();
+            view.dom.dispatchEvent(new CustomEvent('obsidian:link-click', {
+              bubbles: true,
+              detail: { target: entry.name, external: false },
+            }));
+          });
+          td.appendChild(link);
+        } else {
+          const val = getFieldValue(entry, field);
+          if (Array.isArray(val)) {
+            for (const item of val) {
+              const chip = document.createElement('span');
+              chip.className = 'dataview-chip';
+              chip.textContent = String(item);
+              td.appendChild(chip);
+            }
+          } else {
+            td.textContent = formatCellValue(val);
+          }
+        }
+
+        tr.appendChild(td);
+      }
+
+      tbody.appendChild(tr);
+    }
+    table.appendChild(tbody);
+    wrapper.appendChild(table);
+
+    // Footer with count
+    const footer = document.createElement('div');
+    footer.className = 'dataview-footer';
+    footer.textContent = `${entries.length} Ergebnis${entries.length !== 1 ? 'se' : ''}`;
+    wrapper.appendChild(footer);
+
+    return wrapper;
+  }
 }
 
 const IMAGE_EXTS = new Set(['png', 'jpg', 'jpeg', 'gif', 'svg', 'webp', 'bmp', 'ico', 'avif']);

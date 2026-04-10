@@ -12,11 +12,13 @@ import type {
   NoteDocument,
   SearchResult,
   BacklinkResult,
+  FrontmatterEntry,
   RenameResult,
   VaultChangeEvent,
   GitStatus,
   GitCommit,
 } from '../shared/ipc';
+import * as yaml from 'js-yaml';
 import { DEFAULT_SETTINGS } from '../shared/ipc';
 import { extractHeadings, rewriteWikilinks } from '../shared/linking';
 
@@ -28,6 +30,7 @@ let watcher: chokidar.FSWatcher | null = null;
 let settings: AppSettings = { ...DEFAULT_SETTINGS };
 
 const noteCache = new Map<string, { raw: string; mtimeMs: number }>();
+const frontmatterCache = new Map<string, { mtimeMs: number; frontmatter: Record<string, unknown> }>();
 
 const IGNORED_NAMES = new Set(['.git', '.obsidian', '.trash', 'node_modules', '.DS_Store']);
 const IMAGE_EXTS    = new Set(['.png', '.jpg', '.jpeg', '.gif', '.webp', '.svg', '.bmp', '.ico', '.avif', '.pdf']);
@@ -139,9 +142,9 @@ function startWatcher(dir: string): void {
     p.endsWith('.md') || IMAGE_EXTS.has(path.extname(p).toLowerCase());
 
   watcher.on('add',    p => { if (isTracked(p)) emit('added', p); });
-  watcher.on('change', p => { if (p.endsWith('.md')) emit('changed', p); });
+  watcher.on('change', p => { if (p.endsWith('.md')) { frontmatterCache.delete(p); emit('changed', p); } });
   watcher.on('unlink', p => {
-    if (p.endsWith('.md')) { noteCache.delete(p); }
+    if (p.endsWith('.md')) { noteCache.delete(p); frontmatterCache.delete(p); }
     if (isTracked(p)) emit('removed', p);
   });
   watcher.on('addDir', p => emit('added', p));
@@ -172,6 +175,49 @@ function makeDoc(filePath: string, raw: string, mtimeMs: number): NoteDocument {
   return { path: filePath, raw, headings: extractHeadings(raw), dirty: false, mtimeMs };
 }
 
+// ─── Frontmatter parsing ─────────────────────────────────────────────────────
+
+function parseFrontmatter(raw: string): Record<string, unknown> | null {
+  if (!raw.startsWith('---')) return null;
+  const endIdx = raw.indexOf('\n---', 3);
+  if (endIdx === -1) return null;
+  const yamlBlock = raw.slice(4, endIdx); // skip '---\n'
+  try {
+    const parsed = yaml.load(yamlBlock);
+    if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) {
+      return parsed as Record<string, unknown>;
+    }
+  } catch { /* invalid YAML */ }
+  return null;
+}
+
+function getFrontmatterEntry(filePath: string): FrontmatterEntry | null {
+  try {
+    const stat = fs.statSync(filePath);
+    const cached = frontmatterCache.get(filePath);
+    if (cached && cached.mtimeMs === stat.mtimeMs) {
+      return {
+        path: filePath,
+        name: path.basename(filePath, '.md'),
+        frontmatter: cached.frontmatter,
+      };
+    }
+
+    const noteCached = noteCache.get(filePath);
+    const raw = noteCached?.raw ?? fs.readFileSync(filePath, 'utf-8');
+    const fm = parseFrontmatter(raw);
+    if (fm) {
+      frontmatterCache.set(filePath, { mtimeMs: stat.mtimeMs, frontmatter: fm });
+      return {
+        path: filePath,
+        name: path.basename(filePath, '.md'),
+        frontmatter: fm,
+      };
+    }
+  } catch { /* skip unreadable */ }
+  return null;
+}
+
 // ─── IPC handlers ─────────────────────────────────────────────────────────────
 
 function setupIPC(): void {
@@ -197,6 +243,7 @@ function setupIPC(): void {
     settings = { ...settings, lastVaultPath: vaultPath };
     saveSettings(settings);
     noteCache.clear();
+    frontmatterCache.clear();
     startWatcher(vaultPath);
     return buildSnapshot();
   });
@@ -536,6 +583,19 @@ function setupIPC(): void {
       } catch { /* skip unreadable */ }
     }
     return results;
+  });
+
+  // ── vault:query-frontmatter ──────────────────────────────────────────────
+  ipcMain.handle('vault:query-frontmatter', (): FrontmatterEntry[] => {
+    if (!vaultPath) return [];
+    const snap = buildSnapshot();
+    const entries: FrontmatterEntry[] = [];
+    for (const filePath of snap.allPaths) {
+      if (!filePath.endsWith('.md')) continue;
+      const entry = getFrontmatterEntry(filePath);
+      if (entry) entries.push(entry);
+    }
+    return entries;
   });
 
   // ── export:html ──────────────────────────────────────────────────────────

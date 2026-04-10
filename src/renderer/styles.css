@@ -1518,6 +1518,90 @@ body {
   font-weight: 600;
 }
 
+/* ── Dataview tables ─────────────────────────────────────────────────────── */
+.dataview-wrapper {
+  margin: 8px 0;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  overflow: hidden;
+  background: var(--bg-surface);
+}
+
+.dataview-table {
+  border-collapse: collapse;
+  width: 100%;
+  font-size: inherit;
+}
+
+.dataview-table th {
+  background: var(--bg-hover);
+  font-weight: 600;
+  text-align: left;
+  padding: 6px 14px;
+  border-bottom: 1px solid var(--border);
+  color: var(--text-muted);
+  font-size: 0.9em;
+  text-transform: capitalize;
+}
+
+.dataview-table td {
+  padding: 5px 14px;
+  border-bottom: 1px solid var(--border);
+  vertical-align: top;
+  color: var(--text-primary);
+}
+
+.dataview-table tbody tr:last-child td {
+  border-bottom: none;
+}
+
+.dataview-table tbody tr:hover {
+  background: var(--bg-hover);
+}
+
+.dataview-link {
+  color: var(--link);
+  cursor: pointer;
+  text-decoration: none;
+}
+
+.dataview-link:hover {
+  text-decoration: underline;
+}
+
+.dataview-chip {
+  display: inline-flex;
+  align-items: center;
+  background: color-mix(in srgb, var(--accent) 14%, transparent);
+  color: var(--accent);
+  border-radius: 10px;
+  padding: 1px 8px;
+  font-size: 0.9em;
+  font-weight: 500;
+  margin-right: 4px;
+  margin-bottom: 2px;
+}
+
+.dataview-footer {
+  padding: 4px 14px;
+  font-size: 0.8em;
+  color: var(--text-faint);
+  border-top: 1px solid var(--border);
+  background: var(--bg-hover);
+}
+
+.dataview-loading {
+  padding: 12px 14px;
+  color: var(--text-muted);
+  font-style: italic;
+}
+
+.dataview-empty {
+  padding: 12px 14px;
+  color: var(--text-muted);
+  font-style: italic;
+}
+
 /* ── Sidebar hidden ───────────────────────────────────────────────────────── */
 .app.sidebar-hidden .sidebar { display: none; }
 .app.sidebar-hidden .activity-bar { border-right: none; }

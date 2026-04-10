@@ -135,6 +135,14 @@ export interface BacklinkResult {
   line: number;
 }
 
+// ─── Dataview ────────────────────────────────────────────────────────────────
+
+export interface FrontmatterEntry {
+  path: string;
+  name: string;
+  frontmatter: Record<string, unknown>;
+}
+
 // ─── Events ──────────────────────────────────────────────────────────────────
 
 export interface VaultChangeEvent {
@@ -200,6 +208,7 @@ export interface VaultApi {
   stageHunk(relPath: string, fromLineA: number, toLineA: number, isPureInsertion: boolean, newContent: string[]): Promise<void>;
   writeContext(filePath: string | null, selection: string): Promise<string>;
   getBacklinks(targetPath: string): Promise<BacklinkResult[]>;
+  queryFrontmatter(): Promise<FrontmatterEntry[]>;
   exportHtml(notePath: string, html: string): Promise<void>;
   exportPdf(notePath: string, html: string): Promise<void>;
 }

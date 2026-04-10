@@ -56,6 +56,8 @@ const api: VaultApi = {
     ipcRenderer.invoke('context:write', filePath, selection),
   getBacklinks:   (targetPath: string) =>
     ipcRenderer.invoke('vault:backlinks', targetPath),
+  queryFrontmatter: () =>
+    ipcRenderer.invoke('vault:query-frontmatter'),
   exportHtml:     (notePath: string, html: string) =>
     ipcRenderer.invoke('export:html', notePath, html),
   exportPdf:      (notePath: string, html: string) =>
