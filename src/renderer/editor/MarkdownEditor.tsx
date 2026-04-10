@@ -4,7 +4,9 @@ import { EditorState, Compartment, Extension, Prec, Facet, StateField, StateEffe
 import { defaultKeymap, history, historyKeymap, indentWithTab } from '@codemirror/commands';
 import { searchKeymap, search } from '@codemirror/search';
 import { markdown, markdownLanguage } from '@codemirror/lang-markdown';
+import { foldKeymap, foldEffect, unfoldEffect, foldAll, unfoldAll, foldable, foldState, codeFolding } from '@codemirror/language';
 import { vim, Vim } from '@replit/codemirror-vim';
+import { markdownFoldService, headingFoldGutter } from './headingFold';
 import { livePreviewPlugin, livePreviewBlockField, livePreviewConfig } from './livePreview';
 import { wikilinkAutocomplete, autocompleteConfig } from './linkAutocomplete';
 import { gitGutterExtension, setGitHunks, computeHunks, type GitHunk } from './gitGutter';
@@ -337,6 +339,172 @@ function registerAppVimCommands(): void {
   mapCommand('k', 'motion', 'moveByLogicalLines', { forward: false, linewise: true }, { context: 'normal' });
   mapCommand('j', 'motion', 'moveByLogicalLines', { forward: true,  linewise: true }, { context: 'visual' });
   mapCommand('k', 'motion', 'moveByLogicalLines', { forward: false, linewise: true }, { context: 'visual' });
+
+  // ── Heading fold commands (Vim z-motions) ─────────────────────────────────
+
+  // zc — fold at cursor (fold the heading section the cursor is on or inside)
+  Vim.defineEx('foldclose', 'foldc', (cm: { cm6: EditorView }) => {
+    const view = cm.cm6;
+    const head = view.state.selection.main.head;
+    const curLine = view.state.doc.lineAt(head);
+
+    // Try to fold from current line first (if it's a heading)
+    const range = foldable(view.state, curLine.from, curLine.to);
+    if (range) {
+      view.dispatch({ effects: foldEffect.of(range) });
+      return;
+    }
+
+    // Walk upwards to find a parent heading that can be folded
+    for (let ln = curLine.number - 1; ln >= 1; ln--) {
+      const line = view.state.doc.line(ln);
+      const r = foldable(view.state, line.from, line.to);
+      if (r && r.to >= head) {
+        view.dispatch({ effects: foldEffect.of(r) });
+        return;
+      }
+    }
+  });
+
+  // zo — unfold at cursor
+  Vim.defineEx('foldopen', 'foldo', (cm: { cm6: EditorView }) => {
+    const view = cm.cm6;
+    const head = view.state.selection.main.head;
+    const curLine = view.state.doc.lineAt(head);
+
+    // Check the fold state for folds that overlap the current line
+    let found = false;
+    const fs = view.state.field(foldState, false);
+    if (fs) {
+      // Check the current line range plus a bit before (heading line itself)
+      const checkFrom = curLine.from;
+      const checkTo = curLine.to;
+      fs.between(checkFrom, checkTo, (from, to) => {
+        if (!found) {
+          view.dispatch({ effects: unfoldEffect.of({ from, to }) });
+          found = true;
+        }
+      });
+    }
+
+    // If not found on current line, walk upwards to find a folded heading
+    if (!found && fs) {
+      for (let ln = curLine.number - 1; ln >= 1; ln--) {
+        const line = view.state.doc.line(ln);
+        fs.between(line.from, line.to, (from, to) => {
+          if (!found && to >= head) {
+            view.dispatch({ effects: unfoldEffect.of({ from, to }) });
+            found = true;
+          }
+        });
+        if (found) break;
+      }
+    }
+  });
+
+  // za — toggle fold at cursor
+  Vim.defineEx('foldtoggle', 'foldt', (cm: { cm6: EditorView }) => {
+    const view = cm.cm6;
+    const head = view.state.selection.main.head;
+    const curLine = view.state.doc.lineAt(head);
+
+    // Check if cursor line (or a parent heading) is already folded
+    let foundFolded = false;
+    const fs = view.state.field(foldState, false);
+    if (fs) {
+      // Check at current line
+      fs.between(curLine.from, curLine.to, (from, to) => {
+        if (!foundFolded) {
+          view.dispatch({ effects: unfoldEffect.of({ from, to }) });
+          foundFolded = true;
+        }
+      });
+      // Walk upwards if not found
+      if (!foundFolded) {
+        for (let ln = curLine.number - 1; ln >= 1; ln--) {
+          const line = view.state.doc.line(ln);
+          fs.between(line.from, line.to, (from, to) => {
+            if (!foundFolded && to >= head) {
+              view.dispatch({ effects: unfoldEffect.of({ from, to }) });
+              foundFolded = true;
+            }
+          });
+          if (foundFolded) break;
+        }
+      }
+    }
+
+    // If nothing was unfolded, try to fold
+    if (!foundFolded) {
+      const range = foldable(view.state, curLine.from, curLine.to);
+      if (range) {
+        view.dispatch({ effects: foldEffect.of(range) });
+      } else {
+        // Walk upwards to find foldable parent heading
+        for (let ln = curLine.number - 1; ln >= 1; ln--) {
+          const line = view.state.doc.line(ln);
+          const r = foldable(view.state, line.from, line.to);
+          if (r && r.to >= head) {
+            view.dispatch({ effects: foldEffect.of(r) });
+            break;
+          }
+        }
+      }
+    }
+  });
+
+  // zM — fold all headings
+  Vim.defineEx('foldall', '', (cm: { cm6: EditorView }) => {
+    foldAll(cm.cm6);
+  });
+
+  // zR — unfold all headings
+  Vim.defineEx('unfoldall', '', (cm: { cm6: EditorView }) => {
+    unfoldAll(cm.cm6);
+  });
+
+  // zO — recursively unfold at cursor (unfold current + all nested folds)
+  Vim.defineEx('foldopenrecursive', 'foldor', (cm: { cm6: EditorView }) => {
+    const view = cm.cm6;
+    const head = view.state.selection.main.head;
+    const fs = view.state.field(foldState, false);
+    if (!fs) return;
+
+    // Collect all folds that contain or start near the cursor
+    const toUnfold: Array<{ from: number; to: number }> = [];
+    fs.between(0, view.state.doc.length, (from, to) => {
+      if (from <= head && to >= head) {
+        toUnfold.push({ from, to });
+      }
+      // Also unfold folds nested within the section containing the cursor
+      const curLine = view.state.doc.lineAt(head);
+      // Find the section boundary for the current heading
+      for (let ln = curLine.number; ln >= 1; ln--) {
+        const line = view.state.doc.line(ln);
+        if (line.text.match(/^#{1,6}\s+/)) {
+          const r = foldable(view.state, line.from, line.to);
+          if (r && from >= r.from && to <= r.to) {
+            toUnfold.push({ from, to });
+          }
+          break;
+        }
+      }
+    });
+
+    if (toUnfold.length > 0) {
+      // Deduplicate
+      const unique = [...new Map(toUnfold.map(f => [`${f.from}-${f.to}`, f])).values()];
+      view.dispatch({ effects: unique.map(f => unfoldEffect.of(f)) });
+    }
+  });
+
+  // Map Vim normal-mode keybindings
+  Vim.map('zc', ':foldclose<CR>', 'normal');
+  Vim.map('zo', ':foldopen<CR>', 'normal');
+  Vim.map('za', ':foldtoggle<CR>', 'normal');
+  Vim.map('zM', ':foldall<CR>', 'normal');
+  Vim.map('zR', ':unfoldall<CR>', 'normal');
+  Vim.map('zO', ':foldopenrecursive<CR>', 'normal');
 }
 
 // ─── Relative line numbers ────────────────────────────────────────────────────
@@ -510,6 +678,11 @@ const BASE_EXTENSIONS: Extension[] = [
   relativeLineNumbers,
   EditorView.lineWrapping,
   markdown({ base: markdownLanguage }),
+  // ── Heading folding ──
+  markdownFoldService,
+  codeFolding(),
+  headingFoldGutter,
+  keymap.of(foldKeymap),
   editorTheme,
 ];
 
