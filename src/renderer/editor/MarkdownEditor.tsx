@@ -8,6 +8,7 @@ import { vim, Vim } from '@replit/codemirror-vim';
 import { livePreviewPlugin, livePreviewBlockField, livePreviewConfig } from './livePreview';
 import { wikilinkAutocomplete, autocompleteConfig } from './linkAutocomplete';
 import { gitGutterExtension, setGitHunks, computeHunks, type GitHunk } from './gitGutter';
+import { easyMotionExtension, activateEasyMotionMode } from './easyMotion';
 import type { NoteDocument, VimKeybinding } from '../../../shared/ipc';
 import { extractHeadings } from '../../../shared/linking';
 import SlashCommandMenu from './SlashCommandMenu';
@@ -162,7 +163,12 @@ function applyVimBindings(bindings: VimKeybinding[], leader: string): void {
     spaceDefaultRemoved = false;
   }
 
-  for (const { lhs, rhs, mode } of bindings) {
+  // Built-in leader-based bindings (applied alongside user bindings)
+  const builtinLeaderBindings: VimKeybinding[] = [
+    { lhs: '<leader><leader>', rhs: ':easymotion<CR>', mode: 'normal' },
+  ];
+
+  for (const { lhs, rhs, mode } of [...builtinLeaderBindings, ...bindings]) {
     const expandedLhs = expandLeader(lhs, leader);
     try {
       Vim.map(expandedLhs, rhs, mode);
@@ -337,6 +343,11 @@ function registerAppVimCommands(): void {
   mapCommand('k', 'motion', 'moveByLogicalLines', { forward: false, linewise: true }, { context: 'normal' });
   mapCommand('j', 'motion', 'moveByLogicalLines', { forward: true,  linewise: true }, { context: 'visual' });
   mapCommand('k', 'motion', 'moveByLogicalLines', { forward: false, linewise: true }, { context: 'visual' });
+
+  // ── EasyMotion: jump to visible word starts ─────────────────────────────
+  Vim.defineEx('easymotion', 'easy', (cm: { cm6: EditorView }) => {
+    activateEasyMotionMode(cm.cm6);
+  });
 }
 
 // ─── Relative line numbers ────────────────────────────────────────────────────
@@ -507,6 +518,7 @@ const BASE_EXTENSIONS: Extension[] = [
   highlightActiveLine(),
   drawSelection(),
   gitGutterExtension(),
+  easyMotionExtension(),
   relativeLineNumbers,
   EditorView.lineWrapping,
   markdown({ base: markdownLanguage }),
