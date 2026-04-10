@@ -5,7 +5,7 @@ import { defaultKeymap, history, historyKeymap, indentWithTab } from '@codemirro
 import { searchKeymap, search } from '@codemirror/search';
 import { markdown, markdownLanguage } from '@codemirror/lang-markdown';
 import { vim, Vim } from '@replit/codemirror-vim';
-import { livePreviewPlugin, livePreviewBlockField, livePreviewConfig } from './livePreview';
+import { livePreviewPlugin, livePreviewBlockField, livePreviewConfig, codeHighlightField } from './livePreview';
 import { wikilinkAutocomplete, autocompleteConfig } from './linkAutocomplete';
 import { gitGutterExtension, setGitHunks, computeHunks, type GitHunk } from './gitGutter';
 import type { NoteDocument, VimKeybinding } from '../../../shared/ipc';
@@ -652,7 +652,7 @@ const MarkdownEditor = forwardRef<MarkdownEditorHandle, MarkdownEditorProps>(fun
         vimCompartment.of(vimMode ? vim() : []),
         livePreviewCompartment.of(
           editorMode === 'live-preview'
-            ? [livePreviewPlugin, livePreviewBlockField, livePreviewConfig.of({ allPaths, notePath: doc.path, vaultPath })]
+            ? [livePreviewPlugin, livePreviewBlockField, codeHighlightField, livePreviewConfig.of({ allPaths, notePath: doc.path, vaultPath })]
             : [],
         ),
         autocompleteCompartment.of([
@@ -745,7 +745,7 @@ const MarkdownEditor = forwardRef<MarkdownEditorHandle, MarkdownEditorProps>(fun
     view.dispatch({
       effects: livePreviewCompartment.reconfigure(
         editorMode === 'live-preview'
-          ? [livePreviewPlugin, livePreviewBlockField, livePreviewConfig.of({ allPaths, notePath: doc.path, vaultPath })]
+          ? [livePreviewPlugin, livePreviewBlockField, codeHighlightField, livePreviewConfig.of({ allPaths, notePath: doc.path, vaultPath })]
           : [],
       ),
     });
