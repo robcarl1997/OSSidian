@@ -407,6 +407,7 @@ const ACTION_LABELS: Record<AppAction, string> = {
   terminalClose:   'Aktuelles Terminal schließen',
   terminalGrow:    'Terminal vergrößern',
   terminalShrink:  'Terminal verkleinern',
+  openCalendar:    'Kalender öffnen',
 };
 
 const VIM_COMMANDS: Partial<Record<AppAction, string>> = {

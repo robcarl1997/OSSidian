@@ -44,9 +44,11 @@ import GraphView from './components/GraphView';
 import StatusBar from './components/StatusBar';
 import BookmarksPanel from './components/BookmarksPanel';
 import TagPanel from './components/TagPanel';
+import CalendarView from './components/CalendarView';
 import { marked } from 'marked';
 
 const GRAPH_TAB_PATH = '__graph__';
+const CALENDAR_TAB_PATH = '__calendar__';
 
 const IMAGE_EXTS = new Set(['png','jpg','jpeg','gif','webp','svg','bmp','ico','avif']);
 const AUDIO_EXTS = new Set(['mp3','wav','ogg','flac','m4a','aac','wma']);
@@ -175,6 +177,8 @@ export default function App() {
   const [headContent, setHeadContent] = useState<string | null | undefined>(undefined);
   const [activeDiff, setActiveDiff]   = useState<{ path: string; head: string | null; current: string; readOnly?: boolean; aLabel?: string } | null>(null);
   // (Images, PDFs, audio, video are now opened as tabs — detected from path extension)
+  const [calendarInitialDate, setCalendarInitialDate] = useState<string | undefined>(undefined);
+  const [calendarInitialView, setCalendarInitialView] = useState<string | undefined>(undefined);
   const [gitRefreshKey, setGitRefreshKey] = useState(0);
   const [focusFileTreeReq, setFocusFileTreeReq] = useState<number | undefined>(undefined);
   const [terminalOpen, setTerminalOpen]         = useState(false);
@@ -315,6 +319,17 @@ export default function App() {
       return;
     }
 
+    // Handle calendar: prefix links (e.g. "calendar:2026-04" or "calendar:meeting-view")
+    if (rawTarget.startsWith('calendar:')) {
+      const arg = rawTarget.slice('calendar:'.length);
+      if (/^\d{4}-\d{2}$/.test(arg)) {
+        openCalendar(arg);
+      } else {
+        openCalendar(undefined, arg);
+      }
+      return;
+    }
+
     if (!snapshot) return;
 
     // Attachment files (images, PDFs, audio, video) → open as tab without loading content
@@ -388,6 +403,16 @@ export default function App() {
     setActivePath(filePath);
     if (anchor) setPendingAnchor(anchor);
   }, [snapshot, tabs, activePath, activePaneIdx, splitEnabled, splitTabs]);
+
+  // ─── Open Calendar ───────────────────────────────────────────────────────
+  const openCalendar = useCallback((initialDate?: string, initialViewName?: string) => {
+    setCalendarInitialDate(initialDate);
+    setCalendarInitialView(initialViewName);
+    const pseudoDoc: NoteDocument = { path: CALENDAR_TAB_PATH, raw: '', headings: [], dirty: false, mtimeMs: 0 };
+    setTabs(prev => prev.find(t => t.path === CALENDAR_TAB_PATH) ? prev : [...prev, pseudoDoc]);
+    setActivePath(CALENDAR_TAB_PATH);
+    setActiveDiff(null);
+  }, []);
 
   // ─── Export note ─────────────────────────────────────────────────────────
   const exportNote = useCallback(async (format: 'html' | 'pdf') => {
@@ -606,6 +631,7 @@ export default function App() {
               setSnapshot(p => p ? { ...p, settings: updated } : p));
           }
           break;
+        case 'openCalendar': openCalendar(); break;
         case 'toggleTerminal':
           setTerminalOpen(v => {
             if (!v) {
@@ -754,7 +780,7 @@ export default function App() {
       window.removeEventListener('obsidian:terminal-prev',   onTerminalPrev   as EventListener);
       window.removeEventListener('keydown', onKeyDown, true);
     };
-  }, [switchTab, activePath, closeTab, jumpBack, settings.appKeybindings, snapshot, sidebarOpen, sidebarTab, openSplit, closeSplitPane, focusPane, terminalPosition]);
+  }, [switchTab, activePath, closeTab, jumpBack, settings.appKeybindings, snapshot, sidebarOpen, sidebarTab, openSplit, closeSplitPane, focusPane, terminalPosition, openCalendar]);
 
   // ─── Global Vim key-sequence handler ──────────────────────────────────────
   //
@@ -1254,6 +1280,23 @@ export default function App() {
               <line x1="16" y1="3" x2="14" y2="21"/>
             </svg>
           </button>
+          <button
+            className={`activity-btn${activePath === CALENDAR_TAB_PATH ? ' active' : ''}`}
+            title="Kalender-Ansicht"
+            onClick={() => openCalendar()}
+          >
+            <svg width="18" height="18" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round">
+              <rect x="1.5" y="2.5" width="13" height="11.5" rx="1.5"/>
+              <line x1="1.5" y1="6" x2="14.5" y2="6"/>
+              <line x1="5" y1="1" x2="5" y2="4"/>
+              <line x1="11" y1="1" x2="11" y2="4"/>
+              <circle cx="5" cy="9" r="0.8" fill="currentColor" stroke="none"/>
+              <circle cx="8" cy="9" r="0.8" fill="currentColor" stroke="none"/>
+              <circle cx="11" cy="9" r="0.8" fill="currentColor" stroke="none"/>
+              <circle cx="5" cy="12" r="0.8" fill="currentColor" stroke="none"/>
+              <circle cx="8" cy="12" r="0.8" fill="currentColor" stroke="none"/>
+            </svg>
+          </button>
         </div>
         <div className="activity-bar-bottom">
           <button className="activity-btn" title="Einstellungen" onClick={() => setSettingsOpen(true)}>
@@ -1387,7 +1430,7 @@ export default function App() {
         <div className={`workspace-body workspace-body--${terminalOpen ? terminalPosition : 'bottom'}`}>
         <div className="panes-wrapper">
         {/* Editor toolbar applies to whichever pane is active */}
-        {focusedTab && !focusedKind && !activeDiff && focusedTab.path !== GRAPH_TAB_PATH && (
+        {focusedTab && !focusedKind && !activeDiff && focusedTab.path !== GRAPH_TAB_PATH && activePath !== CALENDAR_TAB_PATH && (
           <div className="editor-toolbar">
             <button
               className={`editor-mode-btn${settings.editorMode === 'live-preview' ? ' active' : ''}`}
@@ -1458,6 +1501,23 @@ export default function App() {
               activePath={null}
               vaultPath={snapshot.vaultPath}
               onOpenNote={(path) => openNote(path)}
+            />
+          ) : activePath === CALENDAR_TAB_PATH && snapshot?.vaultPath ? (
+            <CalendarView
+              vaultPath={snapshot.vaultPath}
+              settings={settings}
+              onOpenNote={openNote}
+              onCreateDailyNote={(dateStr) => {
+                if (!snapshot?.vaultPath) return;
+                const dailyFolder = snapshot.vaultPath + '/Tägliche Notizen';
+                const filePath = dailyFolder + '/' + dateStr + '.md';
+                window.vaultApp.createEntry(dailyFolder, dateStr + '.md', 'file')
+                  .then(() => openNote(filePath))
+                  .catch(() => openNote(filePath));
+              }}
+              onSaveSettings={handleSettingsSave}
+              initialDate={calendarInitialDate}
+              initialView={calendarInitialView}
             />
           ) : activeKind === 'image' && activeTab && snapshot?.vaultPath ? (
             <ImageViewer

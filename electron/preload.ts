@@ -70,6 +70,8 @@ const api: VaultApi = {
     ipcRenderer.invoke('tags:search', tag),
   readNoteContent: (path: string) =>
     ipcRenderer.invoke('note:readContent', path),
+  getCalendarNotes: (year: number, month: number, filters?: Record<string, string>) =>
+    ipcRenderer.invoke('calendar:getNotes', year, month, filters),
 };
 
 contextBridge.exposeInMainWorld('vaultApp', api);

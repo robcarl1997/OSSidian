@@ -1,3 +1,17 @@
+// ─── Calendar ────────────────────────────────────────────────────────────────
+
+export interface CalendarNote {
+  path: string;
+  name: string;
+  date: string; // YYYY-MM-DD
+  frontmatter: Record<string, unknown>;
+}
+
+export interface CalendarSavedView {
+  name: string;
+  filters: Record<string, string>;
+}
+
 // ─── Settings ────────────────────────────────────────────────────────────────
 
 export type EditorMode = 'live-preview' | 'source';
@@ -36,7 +50,8 @@ export type AppAction =
   | 'terminalPrev'
   | 'terminalClose'
   | 'terminalGrow'
-  | 'terminalShrink';
+  | 'terminalShrink'
+  | 'openCalendar';
 
 export interface AppKeybinding {
   key: string;      // normalised combo, e.g. "Ctrl+P", "Ctrl+Shift+O"
@@ -61,6 +76,7 @@ export interface AppSettings {
   terminalPosition: 'bottom' | 'right';
   splitPaneRatio: number;      // 0.1 .. 0.9, fraction of width given to left pane
   bookmarks: string[];         // vault-relative paths of bookmarked/favorited notes
+  calendarViews: CalendarSavedView[];
 }
 
 export const DEFAULT_SETTINGS: AppSettings = {
@@ -80,6 +96,7 @@ export const DEFAULT_SETTINGS: AppSettings = {
   terminalPosition: 'right',
   splitPaneRatio: 0.5,
   bookmarks: [],
+  calendarViews: [],
   appKeybindings: [
     { key: 'Ctrl+P',         action: 'quickOpen'     },
     { key: 'Ctrl+B',         action: 'toggleSidebar' },
@@ -245,6 +262,7 @@ export interface VaultApi {
   getAllTags(): Promise<TagInfo[]>;
   searchByTag(tag: string): Promise<SearchResult[]>;
   readNoteContent(path: string): Promise<string | null>;
+  getCalendarNotes(year: number, month: number, filters?: Record<string, string>): Promise<CalendarNote[]>;
 }
 
 export interface WindowControls {

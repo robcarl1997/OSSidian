@@ -19,6 +19,7 @@ import type {
   GitStatus,
   GitCommit,
   TagInfo,
+  CalendarNote,
 } from '../shared/ipc';
 import * as yaml from 'js-yaml';
 import { DEFAULT_SETTINGS } from '../shared/ipc';
@@ -446,6 +447,68 @@ function setupIPC(): void {
     return results;
   });
 
+  // ── calendar:getNotes ─────────────────────────────────────────────────────
+  ipcMain.handle('calendar:getNotes', (_e, year: number, month: number, filters?: Record<string, string>): CalendarNote[] => {
+    if (!vaultPath) return [];
+
+    const snapshot = buildSnapshot();
+    const results: CalendarNote[] = [];
+    const DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
+    const monthStr = String(month).padStart(2, '0');
+    const prefix = `${year}-${monthStr}`;
+
+    for (const filePath of snapshot.allPaths) {
+      if (!filePath.endsWith('.md')) continue;
+      try {
+        const cached = noteCache.get(filePath);
+        const raw = cached?.raw ?? fs.readFileSync(filePath, 'utf-8');
+        if (!cached) {
+          const mtimeMs = fs.statSync(filePath).mtimeMs;
+          noteCache.set(filePath, { raw, mtimeMs });
+        }
+
+        const name = path.basename(filePath, '.md');
+        const fm = parseFrontmatter(raw);
+
+        // Determine date
+        let noteDate: string | null = null;
+        if (DATE_RE.test(name)) {
+          noteDate = name;
+        } else if (typeof fm.date === 'string' && DATE_RE.test(fm.date)) {
+          noteDate = fm.date;
+        } else if (typeof fm.created === 'string' && DATE_RE.test(fm.created)) {
+          noteDate = fm.created;
+        } else {
+          // Fall back to mtime
+          const c = noteCache.get(filePath);
+          if (c) {
+            const d = new Date(c.mtimeMs);
+            noteDate = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+          }
+        }
+
+        if (!noteDate || !noteDate.startsWith(prefix)) continue;
+
+        // Apply frontmatter filters
+        if (filters && Object.keys(filters).length > 0) {
+          let matches = true;
+          for (const [key, val] of Object.entries(filters)) {
+            const fmVal = fm[key];
+            if (fmVal === undefined || String(fmVal).toLowerCase() !== val.toLowerCase()) {
+              matches = false;
+              break;
+            }
+          }
+          if (!matches) continue;
+        }
+
+        results.push({ path: filePath, name, date: noteDate, frontmatter: fm });
+      } catch { /* skip unreadable */ }
+    }
+
+    return results;
+  });
+
   // ── shell:open-external ──────────────────────────────────────────────────
   ipcMain.handle('shell:open-external', (_e, url: string) => shell.openExternal(url));
 
@@ -862,6 +925,39 @@ function extractTags(raw: string): string[] {
   }
 
   return tags;
+}
+
+/** Parse YAML frontmatter between --- delimiters into a plain object */
+function parseFrontmatter(raw: string): Record<string, unknown> {
+  if (!raw.startsWith('---')) return {};
+  const endIdx = raw.indexOf('\n---', 3);
+  if (endIdx === -1) return {};
+  const fmYaml = raw.slice(4, endIdx);
+  const result: Record<string, unknown> = {};
+  for (const line of fmYaml.split('\n')) {
+    const colonIdx = line.indexOf(':');
+    if (colonIdx === -1) continue;
+    const key = line.slice(0, colonIdx).trim();
+    let val = line.slice(colonIdx + 1).trim();
+    if (!key) continue;
+    // Strip surrounding quotes
+    if ((val.startsWith('"') && val.endsWith('"')) || (val.startsWith("'") && val.endsWith("'"))) {
+      val = val.slice(1, -1);
+    }
+    // Handle arrays (inline [a, b, c])
+    if (val.startsWith('[') && val.endsWith(']')) {
+      result[key] = val.slice(1, -1).split(',').map(s => s.trim().replace(/^['"]|['"]$/g, ''));
+    } else if (val === 'true') {
+      result[key] = true;
+    } else if (val === 'false') {
+      result[key] = false;
+    } else if (val !== '' && !isNaN(Number(val))) {
+      result[key] = Number(val);
+    } else {
+      result[key] = val;
+    }
+  }
+  return result;
 }
 
 // ─── Link rewriting ───────────────────────────────────────────────────────────
