@@ -495,7 +495,7 @@ function registerAppVimCommands(): void {
   });
 
   // zO — recursively unfold at cursor (unfold current + all nested folds)
-  Vim.defineEx('foldopenrecursive', 'foldor', (cm: { cm6: EditorView }) => {
+  Vim.defineEx('foldopenrecursive', 'foldopenr', (cm: { cm6: EditorView }) => {
     const view = cm.cm6;
     const head = view.state.selection.main.head;
     const fs = view.state.field(foldState, false);
@@ -535,7 +535,7 @@ function registerAppVimCommands(): void {
   Vim.map('za', ':foldtoggle<CR>', 'normal');
   Vim.map('zM', ':foldall<CR>', 'normal');
   Vim.map('zR', ':unfoldall<CR>', 'normal');
-  Vim.map('zO', ':foldopenrecursive<CR>', 'normal');
+  Vim.map('zO', ':foldopenr<CR>', 'normal');
 }
 
 // ─── Relative line numbers ────────────────────────────────────────────────────
