@@ -27,7 +27,8 @@ export type AppAction =
   | 'splitPane'
   | 'paneShrink'
   | 'paneGrow'
-  | 'paneReset';
+  | 'paneReset'
+  | 'dailyNote';
 
 export interface AppKeybinding {
   key: string;      // normalised combo, e.g. "Ctrl+P", "Ctrl+Shift+O"
@@ -48,6 +49,7 @@ export interface AppSettings {
   vimLeader: string;
   appKeybindings: AppKeybinding[];
   attachmentFolder: string;    // vault-relative folder for pasted images
+  dailyNotesFolder: string;   // vault-relative folder for daily notes
   terminalPosition: 'bottom' | 'right';
   splitPaneRatio: number;      // 0.1 .. 0.9, fraction of width given to left pane
 }
@@ -65,6 +67,7 @@ export const DEFAULT_SETTINGS: AppSettings = {
   vimKeybindings: [],
   vimLeader: '\\',
   attachmentFolder: 'attachments',
+  dailyNotesFolder: 'Tägliche Notizen',
   terminalPosition: 'right',
   splitPaneRatio: 0.5,
   appKeybindings: [
@@ -84,6 +87,7 @@ export const DEFAULT_SETTINGS: AppSettings = {
     { key: 'Ctrl+Alt+ArrowLeft',  action: 'paneShrink' },
     { key: 'Ctrl+Alt+ArrowRight', action: 'paneGrow'   },
     { key: 'Ctrl+Alt+0',          action: 'paneReset'  },
+    { key: 'Ctrl+D',              action: 'dailyNote'  },
   ],
 };
 
@@ -202,6 +206,7 @@ export interface VaultApi {
   getBacklinks(targetPath: string): Promise<BacklinkResult[]>;
   exportHtml(notePath: string, html: string): Promise<void>;
   exportPdf(notePath: string, html: string): Promise<void>;
+  openOrCreateDailyNote(): Promise<NoteDocument>;
 }
 
 export interface WindowControls {

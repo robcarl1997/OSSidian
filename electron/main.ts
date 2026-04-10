@@ -288,6 +288,35 @@ function setupIPC(): void {
     return results;
   });
 
+  // ── note:daily ───────────────────────────────────────────────────────────
+  ipcMain.handle('note:daily', async () => {
+    if (!vaultPath) throw new Error('Kein Vault geöffnet');
+
+    const folder = settings.dailyNotesFolder || 'Tägliche Notizen';
+    const folderPath = path.join(vaultPath, folder);
+
+    // Ensure folder exists
+    if (!fs.existsSync(folderPath)) {
+      fs.mkdirSync(folderPath, { recursive: true });
+    }
+
+    const today = new Date();
+    const dateStr = today.toISOString().slice(0, 10); // YYYY-MM-DD
+    const filename = `${dateStr}.md`;
+    const filePath = path.join(folderPath, filename);
+
+    if (!fs.existsSync(filePath)) {
+      const dayNames = ['Sonntag', 'Montag', 'Dienstag', 'Mittwoch', 'Donnerstag', 'Freitag', 'Samstag'];
+      const dayName = dayNames[today.getDay()];
+      const template = `# ${dayName}, ${dateStr}\n\n`;
+      fs.writeFileSync(filePath, template, 'utf-8');
+    }
+
+    const raw = fs.readFileSync(filePath, 'utf-8');
+    const stat = fs.statSync(filePath);
+    return makeDoc(filePath, raw, stat.mtimeMs);
+  });
+
   // ── shell:open-external ──────────────────────────────────────────────────
   ipcMain.handle('shell:open-external', (_e, url: string) => shell.openExternal(url));
 

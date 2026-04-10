@@ -255,6 +255,9 @@ function registerAppVimCommands(): void {
   Vim.defineEx('outline', 'ou', () => {
     window.dispatchEvent(new CustomEvent('obsidian:toggle-outline'));
   });
+  Vim.defineEx('daily', 'daily', () => {
+    window.dispatchEvent(new CustomEvent('obsidian:daily-note'));
+  });
 
   // ── Split pane (VS Code style) ──
   Vim.defineEx('vsplit', 'vsp', (_cm: unknown, params: { args?: string[] }) => {
