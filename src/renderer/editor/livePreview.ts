@@ -16,6 +16,7 @@ import {
 } from '@codemirror/view';
 import { EditorState, Facet, RangeSetBuilder, StateEffect, StateField } from '@codemirror/state';
 import * as yaml from 'js-yaml';
+import { highlightCode } from './codeHighlight';
 
 // ─── Configuration facet ──────────────────────────────────────────────────────
 
@@ -234,6 +235,76 @@ export const livePreviewBlockField = StateField.define<DecorationSet>({
     const cursorMoved = tr.state.selection.main.head !== tr.startState.selection.main.head;
     const hasDataviewEffect = tr.effects.some(e => e.is(dataviewDataReady));
     if (tr.docChanged || cursorMoved || hasDataviewEffect) return buildBlockDecorations(tr.state);
+    return value;
+  },
+  provide: f => EditorView.decorations.from(f),
+});
+
+// ─── Code syntax highlighting (mark decorations via highlight.js) ────────────
+
+function buildCodeHighlights(state: EditorState): DecorationSet {
+  const cursorLineNo = state.doc.lineAt(state.selection.main.head).number;
+  const marks: { from: number; to: number; cls: string }[] = [];
+
+  let pos = 0;
+  while (pos <= state.doc.length) {
+    const line = state.doc.lineAt(pos);
+    const fenceM = line.text.match(/^(`{3,}|~{3,})(\S+)/);
+
+    if (fenceM) {
+      const fence = fenceM[1];
+      const lang = fenceM[2];
+      const startNo = line.number;
+      let endNo = -1;
+      let sp = line.to + 1;
+
+      while (sp <= state.doc.length) {
+        const inner = state.doc.lineAt(sp);
+        if (inner.text.startsWith(fence)) { endNo = inner.number; break; }
+        sp = inner.to + 1;
+      }
+
+      if (endNo !== -1) {
+        const hasCursor = cursorLineNo >= startNo && cursorLineNo <= endNo;
+        if (!hasCursor && lang && startNo + 1 < endNo) {
+          const codeLines: string[] = [];
+          for (let n = startNo + 1; n < endNo; n++) {
+            codeLines.push(state.doc.line(n).text);
+          }
+          const codeText = codeLines.join('\n');
+          const tokens = highlightCode(codeText, lang);
+          const codeStart = state.doc.line(startNo + 1).from;
+
+          for (const tok of tokens) {
+            const from = codeStart + tok.from;
+            const to = codeStart + tok.to;
+            if (from < to && to <= state.doc.length) {
+              marks.push({ from, to, cls: tok.className });
+            }
+          }
+        }
+        pos = state.doc.line(endNo).to + 1;
+        continue;
+      }
+    }
+    pos = line.to + 1;
+  }
+
+  // RangeSetBuilder requires ranges sorted by `from` position
+  marks.sort((a, b) => a.from - b.from || a.to - b.to);
+  const builder = new RangeSetBuilder<Decoration>();
+  for (const { from, to, cls } of marks) {
+    builder.add(from, to, Decoration.mark({ class: cls }));
+  }
+  return builder.finish();
+}
+
+export const codeHighlightField = StateField.define<DecorationSet>({
+  create: (state) => buildCodeHighlights(state),
+  update: (value, tr) => {
+    if (tr.docChanged) return buildCodeHighlights(tr.state);
+    const cursorMoved = tr.state.selection.main.head !== tr.startState.selection.main.head;
+    if (cursorMoved) return buildCodeHighlights(tr.state);
     return value;
   },
   provide: f => EditorView.decorations.from(f),
